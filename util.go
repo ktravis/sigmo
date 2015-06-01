@@ -2,7 +2,7 @@ package main
 
 func Add(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
-		sum := a.value.(float64) + b.value.(float64)
+		sum := a.AsFloat() + b.AsFloat()
 		if a.t == "int" && b.t == "int" {
 			return Atom{t: "int", value: int64(sum)}
 		}
@@ -22,7 +22,7 @@ func Negate(a Atom) Atom {
 
 func Multiply(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
-		prod := a.value.(float64) * b.value.(float64)
+		prod := a.AsFloat() * b.AsFloat()
 		if a.t == "int" && b.t == "int" {
 			return Atom{t: "int", value: int64(prod)}
 		}
@@ -33,7 +33,7 @@ func Multiply(a Atom, b Atom) Atom {
 
 func Divide(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
-		div := a.value.(float64) / b.value.(float64)
+		div := a.AsFloat() / b.AsFloat()
 		if a.t == "int" && b.t == "int" {
 			return Atom{t: "int", value: int64(div)}
 		}

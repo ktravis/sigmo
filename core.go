@@ -233,6 +233,51 @@ func Setup(c *Context) {
 		}
 		return last
 	}
+	Special["for"] = func(form *List, c *Context) LispValue {
+		out := List{}
+		if form.children[1].Type() != "list" {
+			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
+		}
+		params := form.children[1].(List)
+		if params.children[0].Type() != "identifier" {
+			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
+		}
+		ident := params.children[0].Value().(string)
+		inner := NewContext(c)
+		temp := params.children[1].Eval(inner)
+		if temp.Type() != "list" {
+			return Atom{t: "error", value: "Second argument of 'for' parameters must evaluate to a list"}
+		}
+		ls := temp.(*List)
+		for _, n := range ls.children {
+			inner.scope[ident] = n.Eval(inner)
+			out.children = append(out.children, form.children[2].Eval(inner))
+		}
+		return out
+	}
+	Special["let"] = func(form *List, c *Context) LispValue {
+		if form.children[1].Type() != "list" {
+			return Atom{t: "error", value: "First argument to 'let' must be a list of form '(identifier list)'"}
+		}
+		params := form.children[1].(List)
+		inner := NewContext(c)
+		for i := 0; i < len(params.children); i += 2 {
+			if params.children[i].Type() != "identifier" {
+				return Atom{t: "error", value: "Even parameters to 'let' must be identifiers"}
+			}
+			ident := params.children[i].Value().(string)
+			var val LispValue = NIL
+			if len(params.children) > i+1 {
+				val = params.children[i+1].Eval(inner)
+			}
+			inner.scope[ident] = val
+		}
+		var last LispValue = NIL
+		for _, n := range form.children[2:] {
+			last = n.Eval(inner)
+		}
+		return last
+	}
 	Special["assert"] = func(form *List, c *Context) LispValue {
 		if Boolean(form.children[1].Eval(c)) {
 			return TRUE

@@ -243,6 +243,7 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
+		// need to figure out how to handle parse problems
 		nodes := Parse(Tokenize(string(dat)))
 		for _, n := range nodes {
 			r := n.Eval(c)
