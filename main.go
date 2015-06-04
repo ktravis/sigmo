@@ -162,7 +162,7 @@ func Categorize(input string) LispValue {
 	}
 }
 
-func REPL(c *Context) *Context {
+func REPL(c Context) Context {
 	tokens := []string{}
 	main_prompt := "> "
 	incomplete := ". "

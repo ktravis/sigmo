@@ -33,3 +33,18 @@
 (print a) ; 10
 
 (print squares)
+
+(print (let (a 1)
+  (defn add-a (b)   ; multiple statments allowed, last is returned
+        (+ b a))
+  (for (b (1 2 3 4))
+       (add-a b)))) ; (2 3 4 5)
+
+(defn fib (n)
+  (let (i 0 x 1 last 0)
+    (while (lt i n)
+           (do
+             (def i (+ i 1))
+             (def temp x)
+             (def last temp)
+             (def x (+ x last)))) x))

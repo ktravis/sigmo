@@ -93,3 +93,17 @@ func Boolean(n LispValue) bool {
 		return false
 	}
 }
+
+func NestedReplace(n LispValue, identifier string, v LispValue) LispValue {
+	if n.Type() == "identifier" && n.Value().(string) == identifier {
+		return v
+	}
+	if n.Type() == "list" {
+		l := n.(List)
+		for i, c := range l.children {
+			l.children[i] = NestedReplace(c, identifier, v)
+		}
+		return l
+	}
+	return n
+}
