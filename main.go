@@ -200,7 +200,6 @@ func REPL(c Context) Context {
 				leftCount = 0
 				rightCount = 0
 				nodes := Parse(tokens)
-				//fmt.Println(Print(root))
 				for _, n := range nodes {
 					r := n.Eval(c)
 					if r.Type() == "error" {

@@ -86,6 +86,7 @@ type LispValue interface {
 	Eval(Context) LispValue
 	Value() interface{}
 	Type() string
+	Copy() LispValue
 }
 
 type List struct {
@@ -134,6 +135,14 @@ func (l List) Value() interface{} {
 	return l.children
 }
 
+func (l List) Copy() LispValue {
+	n := List{}
+	for _, el := range l.children {
+		n.children = append(n.children, el.Copy())
+	}
+	return n
+}
+
 func (l List) Type() string {
 	return "list"
 }
@@ -174,6 +183,10 @@ func (a Atom) Value() interface{} {
 	return a.value
 }
 
+func (a Atom) Copy() LispValue {
+	return Atom{t: a.t, value: a.value}
+}
+
 func (a Atom) Type() string {
 	return a.t
 }
@@ -190,7 +203,7 @@ func (a Atom) Length() Atom {
 }
 
 type LispFunction struct {
-	arc      int
+	argc     int
 	argtypes []string
 	value    func(*List, Context) LispValue
 }
@@ -207,6 +220,10 @@ func (f LispFunction) Value() interface{} {
 	return NIL
 }
 
+func (f LispFunction) Copy() LispValue {
+	return LispFunction{argc: f.argc, argtypes: f.argtypes, value: f.value}
+}
+
 func (f LispFunction) Type() string {
 	return "function"
 }
@@ -221,7 +238,7 @@ func NewFunction(fn func(*List, Context) LispValue) LispFunction {
 }
 
 type LispMacro struct {
-	arc      int
+	argc     int
 	argtypes []string
 	value    func(*List, Context) LispValue
 }
@@ -236,6 +253,10 @@ func (f LispMacro) Eval(c Context) LispValue {
 
 func (f LispMacro) Value() interface{} {
 	return NIL
+}
+
+func (f LispMacro) Copy() LispValue {
+	return LispMacro{argc: f.argc, argtypes: f.argtypes, value: f.value}
 }
 
 func (f LispMacro) Type() string {
@@ -270,24 +291,6 @@ func Setup(c Context) {
 			return &Atom{t: "error", value: fmt.Sprintf("def expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
 		}
 		v := form.children[2].Eval(c)
-		c.Set(form.children[1].Value().(string), v)
-		return v
-	}
-	Special["defn"] = func(form *List, c Context) LispValue {
-		if len(form.children) != 4 {
-			return &Atom{t: "error", value: "Wrong number of arguments to 'defn'"}
-		}
-		if form.children[1].Type() != "identifier" {
-			return Atom{t: "error", value: fmt.Sprintf("defn expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
-		}
-		v := NewFunction(func(args *List, outer Context) LispValue {
-			inner := NewContext(outer)
-			argnames := form.children[2].(List)
-			for i, a := range args.children {
-				inner.Set(argnames.children[i].Value().(string), a)
-			}
-			return form.children[3].Eval(inner)
-		})
 		c.Set(form.children[1].Value().(string), v)
 		return v
 	}
@@ -375,22 +378,21 @@ func Setup(c Context) {
 		}
 		params := form.children[2].(List)
 		v := NewMacro(func(args *List, outer Context) LispValue {
-			//rep := map[string]LispValue{}
 			var last LispValue = NIL
-			proc := form.children[3:]
-			for i, p := range proc {
+			for _, r := range form.children[3:] {
+				p := r.Copy()
 				for j, a := range args.children[1:] {
-					proc[i] = NestedReplace(p, params.children[j].Value().(string), a)
+					p = NestedReplace(p, params.children[j].Value().(string), a)
 				}
-			}
-			//temp := NewReadContext(rep, outer)
-
-			for _, n := range proc {
-				last = n.Eval(outer)
+				last = p.Eval(outer)
 			}
 			return last
 		})
 		c.Set(name, v)
 		return v
+	}
+	Special["debug"] = func(form *List, c Context) LispValue {
+		fmt.Println(c.(*BaseContext).scope)
+		return NIL
 	}
 }
