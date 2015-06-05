@@ -13,7 +13,8 @@ var NIL = Atom{t: "nil"}
 
 type Context interface {
 	Get(string) LispValue
-	Set(string, LispValue)
+	Set(string, LispValue) LispValue
+	SetExisting(string, LispValue) LispValue
 	Parent() Context
 }
 
@@ -35,8 +36,23 @@ func (c *BaseContext) Get(identifier string) LispValue {
 	return v
 }
 
-func (c *BaseContext) Set(identifier string, l LispValue) {
+func (c *BaseContext) Set(identifier string, l LispValue) LispValue {
 	c.scope[identifier] = l
+	return l
+}
+
+func (c *BaseContext) SetExisting(identifier string, l LispValue) LispValue {
+	_, ok := c.scope[identifier]
+	if ok {
+		c.scope[identifier] = l
+		return l
+	}
+	p := c.Parent()
+	if p != nil {
+		return p.SetExisting(identifier, l)
+	}
+	v := LispValue(Atom{t: "error", value: fmt.Sprintf("Unknown identifier '%s'", identifier)})
+	return v
 }
 
 func (c *BaseContext) Parent() Context {
@@ -65,9 +81,12 @@ func (c *ReadContext) Get(identifier string) LispValue {
 	return c.Parent().Get(identifier)
 }
 
-func (c *ReadContext) Set(identifier string, l LispValue) {
-	fmt.Println("set stuff", identifier, l)
-	c.Parent().Set(identifier, l)
+func (c *ReadContext) Set(identifier string, l LispValue) LispValue {
+	return c.Parent().Set(identifier, l)
+}
+
+func (c *ReadContext) SetExisting(identifier string, l LispValue) LispValue {
+	return c.Parent().SetExisting(identifier, l)
 }
 
 func (c *ReadContext) Parent() Context {
@@ -394,5 +413,11 @@ func Setup(c Context) {
 	Special["debug"] = func(form *List, c Context) LispValue {
 		fmt.Println(c.(*BaseContext).scope)
 		return NIL
+	}
+	Special["set!"] = func(form *List, c Context) LispValue {
+		if form.children[1].Type() != "identifier" {
+			return Atom{t: "error", value: fmt.Sprintf("set! expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
+		}
+		return c.SetExisting(form.children[1].Value().(string), form.children[2].Eval(c))
 	}
 }
