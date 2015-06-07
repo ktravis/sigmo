@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/bobappleyard/readline"
 	"io/ioutil"
+	"regexp"
 	"strconv"
 	str "strings"
 )
@@ -15,7 +16,43 @@ const (
 	STRING
 )
 
+var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>][\d\w_\-\$]*[\?!]?$`)
+
 // need an IsIdentifier(string) bool
+func IsIdentifier(token string) bool {
+	return identRegexp.MatchString(token)
+}
+
+func IsSymbol(token string) bool {
+	return str.HasPrefix(token, ":") && IsIdentifier(token[1:])
+}
+
+func Categorize(input string) LispValue {
+	if input == "true" {
+		return TRUE
+	} else if input == "false" {
+		return FALSE
+	} else if input == "nil" {
+		return NIL
+	}
+	i, err := strconv.ParseInt(input, 10, 64)
+	if err == nil {
+		return Atom{value: i, t: "int"}
+	}
+	f, err2 := strconv.ParseFloat(input, 64)
+	if err2 == nil {
+		return Atom{value: f, t: "float"}
+	}
+	if input[0] == '"' && input[len(input)-1] == '"' {
+		return Atom{value: input[1 : len(input)-1], t: "string"}
+	} else if IsIdentifier(input) {
+		return Atom{value: input, t: "identifier"}
+	} else if IsSymbol(input) {
+		return Atom{value: input, t: "symbol"}
+	} else {
+		return Atom{t: "error", value: fmt.Sprintf("Invalid token '%s'", input)}
+	}
+}
 
 func Tokenize(input string) []string {
 	tokens := []string{}
@@ -118,7 +155,9 @@ func Parse(tokens []string) []LispValue {
 	var output []LispValue
 	var stack []List
 	for _, token := range tokens {
-		if token == "(" {
+		if token == "'(" {
+			stack = append(stack, List{Quoted: true})
+		} else if token == "(" {
 			stack = append(stack, List{})
 		} else if token == ")" {
 			s := stack[len(stack)-1]
@@ -137,29 +176,6 @@ func Parse(tokens []string) []LispValue {
 		}
 	}
 	return output
-}
-
-func Categorize(input string) LispValue {
-	if input == "true" {
-		return TRUE
-	} else if input == "false" {
-		return FALSE
-	} else if input == "nil" {
-		return NIL
-	}
-	i, err := strconv.ParseInt(input, 10, 64)
-	if err == nil {
-		return Atom{value: i, t: "int"}
-	}
-	f, err2 := strconv.ParseFloat(input, 64)
-	if err2 == nil {
-		return Atom{value: f, t: "float"}
-	}
-	if input[0] == '"' && input[len(input)-1] == '"' {
-		return Atom{value: input[1 : len(input)-1], t: "string"}
-	} else {
-		return Atom{value: input, t: "identifier"}
-	}
 }
 
 func REPL(c Context) Context {
@@ -188,7 +204,7 @@ func REPL(c Context) Context {
 			}
 			temp := Tokenize(line)
 			for _, t := range temp {
-				if t == "(" {
+				if t == "(" || t == "'(" {
 					leftCount += 1
 				} else if t == ")" {
 					rightCount += 1

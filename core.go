@@ -110,6 +110,7 @@ type LispValue interface {
 
 type List struct {
 	children []LispValue
+	Quoted   bool
 }
 
 func (l List) String() string {
@@ -117,10 +118,16 @@ func (l List) String() string {
 	for _, c := range l.children {
 		elms = append(elms, c.String())
 	}
+	if l.Quoted {
+		return fmt.Sprintf("'(%s)", str.Join(elms, " "))
+	}
 	return fmt.Sprintf("(%s)", str.Join(elms, " "))
 }
 
 func (l List) Eval(c Context) LispValue {
+	if l.Quoted {
+		return l
+	}
 	output := List{}
 	if len(l.children) > 0 {
 		first := l.children[0]
@@ -185,6 +192,8 @@ func (a Atom) String() string {
 		return fmt.Sprintf("%t", a.value)
 	case "identifier":
 		return a.value.(string)
+	case "symbol":
+		return fmt.Sprintf("%s", a.value)
 	case "string":
 		return fmt.Sprintf("\"%s\"", a.value)
 	}

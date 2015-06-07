@@ -237,6 +237,15 @@ var core = map[string]func(*List, Context) LispValue{
 		}
 		return Atom{t: "bool", value: CompareNum(input.children[0].(Atom), input.children[1].(Atom)) >= 0}
 	},
+	"exec": func(input *List, c Context) LispValue {
+		a := input.children[0]
+		if a.Type() != "list" {
+			return Atom{t: "error", value: fmt.Sprintf("'exec' expects single argument of type 'list', not '%s'", a.Type())}
+		}
+		x := a.Copy().(List)
+		x.Quoted = false
+		return x.Eval(c)
+	},
 }
 
 var aliases = map[string]string{
