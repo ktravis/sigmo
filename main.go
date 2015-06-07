@@ -16,15 +16,15 @@ const (
 	STRING
 )
 
-var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>][\d\w_\-\$]*[\?!]?$`)
+var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>\*\/](?:(?:\/|-)[\d\w]|[\d\w_\$])*[\?!]?$`)
+var symbolRegexp = regexp.MustCompile(`^:\w(?:(?:-)[\d\w]|[\d\w_\$])*$`)
 
-// need an IsIdentifier(string) bool
 func IsIdentifier(token string) bool {
 	return identRegexp.MatchString(token)
 }
 
 func IsSymbol(token string) bool {
-	return str.HasPrefix(token, ":") && IsIdentifier(token[1:])
+	return symbolRegexp.MatchString(token)
 }
 
 func Categorize(input string) LispValue {
@@ -178,7 +178,7 @@ func Parse(tokens []string) []LispValue {
 	return output
 }
 
-func REPL(c Context) Context {
+func REPL(c *Context) *Context {
 	tokens := []string{}
 	main_prompt := "> "
 	incomplete := ". "
@@ -233,6 +233,23 @@ func REPL(c Context) Context {
 	return c
 }
 
+func LoadFile(filename string, c *Context) LispValue {
+	dat, err := ioutil.ReadFile(filename)
+	if err != nil {
+		panic(err)
+	}
+	// need to figure out how to handle parse problems
+	nodes := Parse(Tokenize(string(dat)))
+	var last LispValue = NIL
+	for _, n := range nodes {
+		last = n.Eval(c)
+		if last.Type() == "error" {
+			panic(last.Value().(string))
+		}
+	}
+	return last
+}
+
 func main() {
 	command := flag.String("c", "", "Execute a command")
 	interactive := flag.Bool("i", false, "Enter the repl, after processing other commands")
@@ -254,18 +271,7 @@ func main() {
 			REPL(c)
 		}
 	} else if filename != "" {
-		dat, err := ioutil.ReadFile(filename)
-		if err != nil {
-			panic(err)
-		}
-		// need to figure out how to handle parse problems
-		nodes := Parse(Tokenize(string(dat)))
-		for _, n := range nodes {
-			r := n.Eval(c)
-			if r.Type() == "error" {
-				panic(r.Value().(string))
-			}
-		}
+		LoadFile(filename, c)
 		if *interactive {
 			REPL(c)
 		}

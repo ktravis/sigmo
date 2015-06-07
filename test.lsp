@@ -1,4 +1,3 @@
-
 (def a 10)
 (def ls (1 2 3 4 5 6))
 
@@ -16,8 +15,3 @@
 (print a) ; 10
 
 (print squares)
-
-
-(macro defun (name args body)
-       (def name 
-            (lambda args body)))

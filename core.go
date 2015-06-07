@@ -2,33 +2,36 @@ package main
 
 import (
 	"fmt"
+	"os"
 	str "strings"
 )
 
-var Special = make(map[string]func(*List, Context) LispValue)
+var Special = make(map[string]func(*List, *Context) LispValue)
 
 var TRUE = Atom{t: "bool", value: true}
 var FALSE = Atom{t: "bool", value: false}
 var NIL = Atom{t: "nil"}
 
-type Context interface {
-	Get(string) LispValue
-	Set(string, LispValue) LispValue
-	SetExisting(string, LispValue) LispValue
-	Parent() Context
+type Context struct {
+	scope      map[string]LispValue
+	parent     *Context
+	ns         string
+	namespaces map[string]*Context
 }
 
-type BaseContext struct {
-	scope  map[string]LispValue
-	parent Context
-}
-
-func (c *BaseContext) Get(identifier string) LispValue {
+func (c *Context) Get(identifier string) LispValue {
+	if str.Contains(identifier, "/") {
+		paths := str.Split(identifier, "/")
+		if c.ns != str.Join(paths[:len(paths)-1], "/") {
+			return c.GetFromNamespace(paths[:len(paths)-1], paths[len(paths)-1])
+		}
+		identifier = paths[len(paths)-1]
+	}
 	a, ok := c.scope[identifier]
 	if ok {
 		return a
 	}
-	p := c.Parent()
+	p := c.parent
 	if p != nil {
 		return p.Get(identifier)
 	}
@@ -36,18 +39,25 @@ func (c *BaseContext) Get(identifier string) LispValue {
 	return v
 }
 
-func (c *BaseContext) Set(identifier string, l LispValue) LispValue {
+func (c *Context) Set(identifier string, l LispValue) LispValue {
+	if str.Contains(identifier, "/") {
+		paths := str.Split(identifier, "/")
+		if c.ns != str.Join(paths[:len(paths)-1], "/") {
+			return c.SetInNamespace(paths[:len(paths)-1], paths[len(paths)-1], l)
+		}
+		identifier = paths[len(paths)-1]
+	}
 	c.scope[identifier] = l
 	return l
 }
 
-func (c *BaseContext) SetExisting(identifier string, l LispValue) LispValue {
+func (c *Context) SetExisting(identifier string, l LispValue) LispValue {
 	_, ok := c.scope[identifier]
 	if ok {
 		c.scope[identifier] = l
 		return l
 	}
-	p := c.Parent()
+	p := c.parent
 	if p != nil {
 		return p.SetExisting(identifier, l)
 	}
@@ -55,54 +65,117 @@ func (c *BaseContext) SetExisting(identifier string, l LispValue) LispValue {
 	return v
 }
 
-func (c *BaseContext) Parent() Context {
-	return c.parent
+func (c *Context) GetFromNamespace(paths []string, identifier string) LispValue {
+	if c.parent == nil {
+		context := c
+		var ok bool
+		for _, n := range paths {
+			if context, ok = context.namespaces[n]; !ok {
+				return LispValue(Atom{t: "error", value: fmt.Sprintf("Unknown namespace '%s'", str.Join(paths, "/"))})
+			}
+		}
+		return context.Get(identifier)
+	}
+	return c.parent.GetFromNamespace(paths, identifier)
 }
 
-func NewContext(parent Context) Context {
-	c := BaseContext{
-		scope:  make(map[string]LispValue),
-		parent: parent,
+func (c *Context) SetInNamespace(paths []string, identifier string, l LispValue) LispValue {
+	root := c
+	for root.parent != nil {
+		root = root.parent
+	}
+	for i, p := range paths {
+		x, ok := root.namespaces[p]
+		if !ok {
+			root.namespaces[p] = NewContext(root)
+			x = root.namespaces[p]
+			x.ns = str.Join(paths[:i+1], "/")
+		}
+		root = x
+	}
+	root.scope[identifier] = l
+	return l
+}
+
+func GetNamespace(start *Context, path string) *Context {
+	paths := str.Split(path, "/")
+	root := start
+	for root.parent != nil {
+		root = root.parent
+	}
+	curr := root
+	for i, p := range paths[:len(paths)-1] {
+		x, ok := curr.namespaces[p]
+		if !ok {
+			curr.namespaces[p] = NewContext(curr)
+			x = curr.namespaces[p]
+			x.ns = str.Join(paths[:i], "/")
+		}
+		curr = x
+	}
+	x, exists := curr.namespaces[paths[len(paths)-1]]
+	if !exists {
+		x = NewContext(curr)
+		curr.namespaces[paths[len(paths)-1]] = x
+		x.ns = str.Join(paths, "/")
+	}
+	return x
+}
+
+func NewContext(parent *Context) *Context {
+	c := Context{
+		scope:      make(map[string]LispValue),
+		parent:     parent,
+		namespaces: make(map[string]*Context),
 	}
 	return &c
 }
 
 // passthrough, can't "set"
-type ReadContext struct {
-	scope  map[string]LispValue
-	parent Context
-}
+//type ReadContext struct {
+//scope     map[string]LispValue
+//parent    Context
+//namespace string
+//}
 
-func (c *ReadContext) Get(identifier string) LispValue {
-	a, ok := c.scope[identifier]
-	if ok {
-		return a
-	}
-	return c.Parent().Get(identifier)
-}
+//func (c *ReadContext) Get(identifier string) LispValue {
+//a, ok := c.scope[identifier]
+//if ok {
+//return a
+//}
+//return c.Parent().Get(identifier)
+//}
 
-func (c *ReadContext) Set(identifier string, l LispValue) LispValue {
-	return c.Parent().Set(identifier, l)
-}
+//func (c *ReadContext) Set(identifier string, l LispValue) LispValue {
+//return c.Parent().Set(identifier, l)
+//}
 
-func (c *ReadContext) SetExisting(identifier string, l LispValue) LispValue {
-	return c.Parent().SetExisting(identifier, l)
-}
+//func (c *ReadContext) SetExisting(identifier string, l LispValue) LispValue {
+//return c.Parent().SetExisting(identifier, l)
+//}
 
-func (c *ReadContext) Parent() Context {
-	return c.parent
-}
+//func (c *ReadContext) Parent() Context {
+//return c.parent
+//}
 
-func NewReadContext(m map[string]LispValue, parent Context) Context {
-	if parent == nil {
-		panic("Cannot create a ReadContext with no parent.")
-	}
-	return &ReadContext{scope: m, parent: parent}
-}
+//func (c *ReadContext) GetFromNamespace() string {
+//return c.namespace
+//}
+
+//func (c *ReadContext) SetNamespace(ns string) {
+//c.namespace = ns
+//}
+
+//func NewReadContext(m map[string]LispValue, parent Context) Context {
+//if parent == nil {
+//panic("Cannot create a ReadContext with no parent.")
+//}
+//return &ReadContext{scope: m, parent: parent}
+//}
 
 type LispValue interface {
 	String() string
-	Eval(Context) LispValue
+	Eval(*Context) LispValue
 	Value() interface{}
 	Type() string
 	Copy() LispValue
@@ -124,7 +197,7 @@ func (l List) String() string {
 	return fmt.Sprintf("(%s)", str.Join(elms, " "))
 }
 
-func (l List) Eval(c Context) LispValue {
+func (l List) Eval(c *Context) LispValue {
 	if l.Quoted {
 		return l
 	}
@@ -200,7 +273,7 @@ func (a Atom) String() string {
 	return a.t
 }
 
-func (a Atom) Eval(c Context) LispValue {
+func (a Atom) Eval(c *Context) LispValue {
 	if a.t == "identifier" {
 		return c.Get(a.value.(string))
 	}
@@ -233,14 +306,14 @@ func (a Atom) Length() Atom {
 type LispFunction struct {
 	argc     int
 	argtypes []string
-	value    func(*List, Context) LispValue
+	value    func(*List, *Context) LispValue
 }
 
 func (f LispFunction) String() string {
 	return "{fn}"
 }
 
-func (f LispFunction) Eval(c Context) LispValue {
+func (f LispFunction) Eval(c *Context) LispValue {
 	return f
 }
 
@@ -256,26 +329,26 @@ func (f LispFunction) Type() string {
 	return "function"
 }
 
-func (f LispFunction) Call(args *List, c Context) LispValue {
+func (f LispFunction) Call(args *List, c *Context) LispValue {
 	// do some argc checking
 	return f.value(args, c)
 }
 
-func NewFunction(fn func(*List, Context) LispValue) LispFunction {
+func NewFunction(fn func(*List, *Context) LispValue) LispFunction {
 	return LispFunction{value: fn}
 }
 
 type LispMacro struct {
 	argc     int
 	argtypes []string
-	value    func(*List, Context) LispValue
+	value    func(*List, *Context) LispValue
 }
 
 func (f LispMacro) String() string {
 	return "{macro}"
 }
 
-func (f LispMacro) Eval(c Context) LispValue {
+func (f LispMacro) Eval(c *Context) LispValue {
 	return f
 }
 
@@ -291,18 +364,18 @@ func (f LispMacro) Type() string {
 	return "macro"
 }
 
-func (f LispMacro) Call(args *List, c Context) LispValue {
+func (f LispMacro) Call(args *List, c *Context) LispValue {
 	// do some argc checking
 	return f.value(args, c)
 }
 
-func NewMacro(fn func(*List, Context) LispValue) LispMacro {
+func NewMacro(fn func(*List, *Context) LispValue) LispMacro {
 	return LispMacro{value: fn}
 }
 
-func Setup(c Context) {
-	Special["lambda"] = func(form *List, c Context) LispValue {
-		return NewFunction(func(args *List, outer Context) LispValue {
+func Setup(c *Context) {
+	Special["lambda"] = func(form *List, c *Context) LispValue {
+		return NewFunction(func(args *List, outer *Context) LispValue {
 			inner := NewContext(outer)
 			argnames := form.children[1].(List)
 			for i, a := range args.children {
@@ -311,7 +384,7 @@ func Setup(c Context) {
 			return form.children[2].Eval(inner)
 		})
 	}
-	Special["def"] = func(form *List, c Context) LispValue {
+	Special["def"] = func(form *List, c *Context) LispValue {
 		if len(form.children) != 3 {
 			return &Atom{t: "error", value: "Wrong number of arguments to 'def'"}
 		}
@@ -322,14 +395,14 @@ func Setup(c Context) {
 		c.Set(form.children[1].Value().(string), v)
 		return v
 	}
-	Special["do"] = func(form *List, c Context) LispValue {
+	Special["do"] = func(form *List, c *Context) LispValue {
 		var last LispValue = NIL
 		for _, n := range form.children[1:] {
 			last = n.Eval(c)
 		}
 		return last
 	}
-	Special["if"] = func(form *List, c Context) LispValue {
+	Special["if"] = func(form *List, c *Context) LispValue {
 		if Boolean(form.children[1].Eval(c)) {
 			return form.children[2].Eval(c)
 		}
@@ -338,14 +411,14 @@ func Setup(c Context) {
 		}
 		return NIL // should this be false?
 	}
-	Special["while"] = func(form *List, c Context) LispValue {
+	Special["while"] = func(form *List, c *Context) LispValue {
 		var last LispValue = NIL
 		for Boolean(form.children[1].Eval(c)) {
 			last = form.children[2].Eval(c)
 		}
 		return last
 	}
-	Special["for"] = func(form *List, c Context) LispValue {
+	Special["for"] = func(form *List, c *Context) LispValue {
 		out := List{}
 		if form.children[1].Type() != "list" {
 			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
@@ -367,7 +440,7 @@ func Setup(c Context) {
 		}
 		return out
 	}
-	Special["let"] = func(form *List, c Context) LispValue {
+	Special["let"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() != "list" {
 			return Atom{t: "error", value: "First argument to 'let' must be a list of form '(identifier list)'"}
 		}
@@ -390,13 +463,13 @@ func Setup(c Context) {
 		}
 		return last
 	}
-	Special["assert"] = func(form *List, c Context) LispValue {
+	Special["assert"] = func(form *List, c *Context) LispValue {
 		if Boolean(form.children[1].Eval(c)) {
 			return TRUE
 		}
 		return Atom{t: "error", value: fmt.Sprintf("Assert failed '%s'", form.children[1].String())}
 	}
-	Special["macro"] = func(form *List, c Context) LispValue {
+	Special["macro"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() != "identifier" {
 			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
 		}
@@ -405,7 +478,7 @@ func Setup(c Context) {
 			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 1 of type 'list', got type '%s'", form.children[2].Type())}
 		}
 		params := form.children[2].(List)
-		v := NewMacro(func(args *List, outer Context) LispValue {
+		v := NewMacro(func(args *List, outer *Context) LispValue {
 			var last LispValue = NIL
 			for _, r := range form.children[3:] {
 				p := r.Copy()
@@ -419,14 +492,39 @@ func Setup(c Context) {
 		c.Set(name, v)
 		return v
 	}
-	Special["debug"] = func(form *List, c Context) LispValue {
-		fmt.Println(c.(*BaseContext).scope)
+	Special["debug"] = func(form *List, c *Context) LispValue {
+		fmt.Println("ns", c.ns)
+		fmt.Println("scope", c.scope)
+		fmt.Println("namespaces", c.namespaces)
+		fmt.Println("parent", c.parent)
 		return NIL
 	}
-	Special["set!"] = func(form *List, c Context) LispValue {
+	Special["set!"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() != "identifier" {
 			return Atom{t: "error", value: fmt.Sprintf("set! expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
 		}
 		return c.SetExisting(form.children[1].Value().(string), form.children[2].Eval(c))
 	}
+	Special["namespace"] = func(form *List, c *Context) LispValue {
+		if form.children[1].Type() != "identifier" {
+			return Atom{t: "error", value: fmt.Sprintf("namespace! expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
+		}
+		ns := GetNamespace(c, form.children[1].Value().(string))
+		var last LispValue = NIL
+		for _, x := range form.children[2:] {
+			last = x.Eval(ns)
+		}
+		return last
+	}
+	// TODO: add an "as" ie (import core/math m) or (import core/math *)
+	Special["import"] = func(form *List, c *Context) LispValue {
+		if form.children[1].Type() == "identifier" {
+			return LoadFile(fmt.Sprintf("%s/%s.lsp", os.Getenv("LSP_ROOT"), form.children[1].Value().(string)), c)
+		}
+		if form.children[1].Type() == "string" {
+			return LoadFile(form.children[1].Value().(string), c)
+		}
+		return Atom{t: "error", value: fmt.Sprintf("import expected argument 0 of type 'identifier' (namespace) or 'string', got type '%s'", form.children[1].Type())}
+	}
+	// TODO: return, break, continue
 }
