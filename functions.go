@@ -5,109 +5,80 @@ import (
 	str "strings"
 )
 
-var core = map[string]func(*List, *Context) LispValue{
-	"%": func(input *List, c *Context) LispValue {
-		if len(input.children) != 2 {
-			return Atom{t: "error", value: "Wrong number of arguments for function '%'"}
-		}
-		if input.children[0].Type() != "int" {
-			return Atom{t: "error", value: fmt.Sprintf("'%%' function requires arguments of type 'int', not '%s'", input.children[0].Type())}
-		}
-		if input.children[1].Type() != "int" {
-			return Atom{t: "error", value: fmt.Sprintf("'%%' function requires arguments of type 'int', not '%s'", input.children[1].Type())}
-		}
+var core = map[string]LispFunction{
+	"%": NewFunction("%", "int,int", func(input *List, c *Context) LispValue {
 		return Atom{t: "int", value: input.children[0].Value().(int64) % input.children[1].Value().(int64)}
-	},
-	"+": func(input *List, c *Context) LispValue {
+	}),
+	"+": NewFunction("+", "int|float,+", func(input *List, c *Context) LispValue {
 		sum := input.children[0].(Atom)
 		for _, n := range input.children[1:] {
-			if !(n.Type() == "int" || n.Type() == "float") {
-				return Atom{t: "error", value: fmt.Sprintf("'+' function requires arguments of type 'int' or 'float', not '%s'", input.children[1].Type())}
-			}
 			sum = Add(sum, n.(Atom))
 		}
 		return sum
-	},
-	"-": func(input *List, c *Context) LispValue {
-		if len(input.children) != 2 {
-			return Atom{t: "error", value: "Wrong number of arguments for function '-'"}
-		}
+	}),
+	"-": NewFunction("-", "int|float,int|float", func(input *List, c *Context) LispValue {
 		return Add(input.children[0].(Atom), Negate(input.children[1].(Atom)))
-	},
-	"*": func(input *List, c *Context) LispValue {
+	}),
+	"*": NewFunction("*", "int|float,+", func(input *List, c *Context) LispValue {
 		sum := input.children[0].(Atom)
 		for _, n := range input.children[1:] {
-			if !(n.Type() == "int" || n.Type() == "float") {
-				return Atom{t: "error", value: fmt.Sprintf("'+' function requires arguments of type 'int' or 'float', not '%s'", input.children[1].Type())}
-			}
 			sum = Multiply(sum, n.(Atom))
 		}
 		return sum
-	},
-	"/": func(input *List, c *Context) LispValue {
-		if len(input.children) != 2 {
-			return Atom{t: "error", value: "Wrong number of arguments for function '-'"}
-		}
+	}),
+	"/": NewFunction("/", "int|float,int|float", func(input *List, c *Context) LispValue {
 		return Divide(input.children[0].(Atom), input.children[1].(Atom))
-	},
-	"print": func(input *List, c *Context) LispValue {
+	}),
+	"print": NewFunction("print", "**", func(input *List, c *Context) LispValue {
+		output := []string{}
+		for _, n := range input.children {
+			output = append(output, str.Trim(n.String(), "\""))
+		}
+		fmt.Printf(str.Join(output, " "))
+		return NIL
+	}),
+	"println": NewFunction("println", "**", func(input *List, c *Context) LispValue {
 		if len(input.children) < 1 {
 			fmt.Println()
 		} else {
 			output := []string{}
 			for _, n := range input.children {
-				r := n.Eval(c)
-				if r.Type() == "error" {
-					return r
-				}
-				output = append(output, str.Trim(r.String(), "\""))
+				output = append(output, str.Trim(n.String(), "\""))
 			}
 			fmt.Println(str.Join(output, " "))
 		}
 		return NIL
-	},
-	"cat": func(input *List, c *Context) LispValue {
-		if len(input.children) < 1 {
-			return Atom{t: "error", value: "Not enough arguments for function 'cat'"}
-		}
+	}),
+	"cat": NewFunction("cat", "string,+", func(input *List, c *Context) LispValue {
 		text := ""
 		for _, s := range input.children {
 			text += str.Trim(s.String(), "\"")
 		}
 		return Atom{t: "string", value: text}
-	},
-	"head": func(input *List, c *Context) LispValue {
-		if len(input.children) < 1 {
-			return Atom{t: "error", value: "Not enough arguments for function 'head'"}
-		} else if input.children[0].Type() != "list" {
-			return Atom{t: "error", value: fmt.Sprintf("Cannot use function 'head' on non-list type argument ('%s')", input.children[0].Type())}
-		}
+	}),
+	"head": NewFunction("head", "list", func(input *List, c *Context) LispValue {
 		return input.children[0].(*List).children[0]
-	},
-	"tail": func(input *List, c *Context) LispValue {
-		if len(input.children) < 1 {
-			return Atom{t: "error", value: "Not enough arguments for function 'tail'"}
-		} else if input.children[0].Type() != "list" {
-			return Atom{t: "error", value: fmt.Sprintf("Cannot use function 'tail' on non-list type argument ('%s')", input.children[0].Type())}
-		}
+	}),
+	"tail": NewFunction("tail", "list", func(input *List, c *Context) LispValue {
 		return List{children: input.children[0].(*List).children[1:]}
-	},
-	"cons": func(input *List, c *Context) LispValue {
-		if len(input.children) != 2 {
-			return Atom{t: "error", value: "Not enough arguments for function 'cons'"}
-		} else if input.children[1].Type() != "list" {
-			return Atom{t: "error", value: fmt.Sprintf("Cannot use function 'cons' on non-list type argument ('%s')", input.children[1].Type())}
+	}),
+	"cons": NewFunction("cons", "*,*", func(input *List, c *Context) LispValue {
+		var left, right *List
+		if input.children[0].Type() != "list" {
+			left = &List{children: []LispValue{input.children[0]}}
+		} else {
+			left = input.children[0].(*List)
 		}
-		ls := input.children[1].(*List)
-		ls.children = append(ls.children, input.children[0])
-		return ls
-	},
-	"rev": func(input *List, c *Context) LispValue {
-		n := input.children[0]
-		if n.Type() != "list" {
-			return Atom{t: "error", value: fmt.Sprintf("Cannot use function 'rev' on non-list type argument ('%s')", n.Type())}
+		if input.children[1].Type() != "list" {
+			right = &List{children: []LispValue{input.children[1]}}
+		} else {
+			right = input.children[1].(*List)
 		}
-		l := n.(*List)
+		left.children = append(left.children, right.children...)
+		return left
+	}),
+	"rev": NewFunction("rev", "list|string", func(input *List, c *Context) LispValue {
+		l := input.children[0].(*List)
 		out := []LispValue{}
 		if len(l.children) > 0 {
 			for i := len(l.children) - 1; i >= 0; i -= 1 {
@@ -115,80 +86,46 @@ var core = map[string]func(*List, *Context) LispValue{
 			}
 		}
 		return List{children: out}
-	},
-	"len": func(input *List, c *Context) LispValue {
+	}),
+	"len": NewFunction("len", "list|string", func(input *List, c *Context) LispValue {
 		if input.children[0].Type() == "list" {
 			return input.children[0].(*List).Length()
-		}
-		if input.children[0].Type() == "string" {
+		} else {
 			return input.children[0].(Atom).Length()
 		}
-		return Atom{t: "error", value: fmt.Sprintf("Cannot use function 'len' on non-list or string type argument ('%s')", input.children[0].Type())}
-	},
-	"eq": func(input *List, c *Context) LispValue {
-		first := input.children[0].Eval(c)
-		if first.Type() == "error" {
-			return first
+	}),
+	"eq": NewFunction("eq", "*,*", func(input *List, c *Context) LispValue {
+		if !Compare(input.children[0], input.children[1]) {
+			return FALSE
 		}
-		for _, o := range input.children[1:] {
-			r := o.Eval(c)
-			if r.Type() == "error" {
-				return r
-			}
-			if !Compare(first, r) {
+		return TRUE
+	}),
+	"neq": NewFunction("neq", "*,*", func(input *List, c *Context) LispValue {
+		if Compare(input.children[0], input.children[1]) {
+			return FALSE
+		}
+		return TRUE
+	}),
+	"and": NewFunction("and", "bool,+", func(input *List, c *Context) LispValue {
+		for _, n := range input.children {
+			if !Boolean(n) {
 				return FALSE
 			}
 		}
 		return TRUE
-	},
-	"neq": func(input *List, c *Context) LispValue {
-		first := input.children[0].Eval(c)
-		if first.Type() == "error" {
-			return first
-		}
-		for _, o := range input.children[1:] {
-			r := o.Eval(c)
-			if r.Type() == "error" {
-				return r
-			}
-			if Compare(first, r) {
-				return FALSE
-			}
-		}
-		return TRUE
-	},
-	"and": func(input *List, c *Context) LispValue {
-		for _, n := range input.children[1:] {
-			r := n.Eval(c)
-			if r.Type() == "error" {
-				return r
-			}
-			if !Boolean(r) {
-				return FALSE
-			}
-		}
-		return TRUE
-	},
-	"or": func(input *List, c *Context) LispValue {
-		for _, n := range input.children[1:] {
-			r := n.Eval(c)
-			if r.Type() == "error" {
-				return r
-			}
-			if Boolean(r) {
+	}),
+	"or": NewFunction("or", "bool,+", func(input *List, c *Context) LispValue {
+		for _, n := range input.children {
+			if Boolean(n) {
 				return TRUE
 			}
 		}
 		return FALSE
-	},
-	"xor": func(input *List, c *Context) LispValue {
+	}),
+	"xor": NewFunction("xor", "bool,bool", func(input *List, c *Context) LispValue {
 		true_seen := false
-		for _, n := range input.children[1:] {
-			r := n.Eval(c)
-			if r.Type() == "error" {
-				return r
-			}
-			if Boolean(r) {
+		for _, n := range input.children {
+			if Boolean(n) {
 				if true_seen {
 					return FALSE
 				} else {
@@ -197,55 +134,36 @@ var core = map[string]func(*List, *Context) LispValue{
 			}
 		}
 		return TRUE
-	},
-	"not": func(input *List, c *Context) LispValue {
-		return Atom{t: "bool", value: !Boolean(input.children[0].Eval(c))}
-	},
-	"lt": func(input *List, c *Context) LispValue {
-		if !(input.children[0].Type() == "int" || input.children[0].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[0].Type())}
-		}
-		if !(input.children[1].Type() == "int" || input.children[1].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[1].Type())}
-		}
+	}),
+	"not": NewFunction("not", "bool", func(input *List, c *Context) LispValue {
+		return Atom{t: "bool", value: !Boolean(input.children[0])}
+	}),
+	"lt": NewFunction("lt", "int|float,int|float", func(input *List, c *Context) LispValue {
 		return Atom{t: "bool", value: CompareNum(input.children[0].(Atom), input.children[1].(Atom)) == -1}
-	},
-	"lte": func(input *List, c *Context) LispValue {
-		if !(input.children[0].Type() == "int" || input.children[0].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[0].Type())}
-		}
-		if !(input.children[1].Type() == "int" || input.children[1].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[1].Type())}
-		}
+	}),
+	"lte": NewFunction("lte", "int|float,int|float", func(input *List, c *Context) LispValue {
 		return Atom{t: "bool", value: CompareNum(input.children[0].(Atom), input.children[1].(Atom)) <= 0}
-	},
-	"gt": func(input *List, c *Context) LispValue {
-		if !(input.children[0].Type() == "int" || input.children[0].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[0].Type())}
-		}
-		if !(input.children[1].Type() == "int" || input.children[1].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[1].Type())}
-		}
+	}),
+	"gt": NewFunction("gt", "int|float,int|float", func(input *List, c *Context) LispValue {
 		return Atom{t: "bool", value: CompareNum(input.children[0].(Atom), input.children[1].(Atom)) == 1}
-	},
-	"gte": func(input *List, c *Context) LispValue {
-		if !(input.children[0].Type() == "int" || input.children[0].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[0].Type())}
-		}
-		if !(input.children[1].Type() == "int" || input.children[1].Type() == "float") {
-			return Atom{t: "error", value: fmt.Sprintf("Value of type '%s' cannot be treated as a number", input.children[1].Type())}
-		}
+	}),
+	"gte": NewFunction("gte", "int|float,int|float", func(input *List, c *Context) LispValue {
 		return Atom{t: "bool", value: CompareNum(input.children[0].(Atom), input.children[1].(Atom)) >= 0}
-	},
-	"exec": func(input *List, c *Context) LispValue {
-		a := input.children[0]
-		if a.Type() != "list" {
-			return Atom{t: "error", value: fmt.Sprintf("'exec' expects single argument of type 'list', not '%s'", a.Type())}
-		}
-		x := a.Copy().(List)
+	}),
+	"exec": NewFunction("exec", "list", func(input *List, c *Context) LispValue {
+		x := input.children[0].Copy().(List)
 		x.Quoted = false
 		return x.Eval(c)
-	},
+	}),
+	"trim": NewFunction("trim", "string,string", func(input *List, c *Context) LispValue {
+		return Atom{t: "string", value: str.Trim(input.children[0].Value().(string), input.children[1].Value().(string))}
+	}),
+	"split": NewFunction("split", "string,string", func(input *List, c *Context) LispValue {
+		return Atom{t: "string", value: str.Split(input.children[0].Value().(string), input.children[1].Value().(string))}
+	}),
+	"split-n": NewFunction("split-n", "string,string,int", func(input *List, c *Context) LispValue {
+		return Atom{t: "string", value: str.SplitN(input.children[0].Value().(string), input.children[1].Value().(string), input.children[2].Value().(int))}
+	}),
 }
 
 var aliases = map[string]string{
@@ -265,7 +183,7 @@ var aliases = map[string]string{
 
 func Bootstrap(c *Context) {
 	for name, fn := range core {
-		c.Set(name, NewFunction(fn))
+		c.Set(name, fn)
 	}
 	for name, a := range aliases {
 		c.Set(name, c.Get(a))

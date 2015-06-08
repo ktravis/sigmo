@@ -16,7 +16,7 @@ const (
 	STRING
 )
 
-var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>\*\/](?:(?:\/|-)[\d\w]|[\d\w_\$])*[\?!]?$`)
+var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>\*\/](?:(?:\/|-)[\d\w]|[\d\w_\$])*[\?!]?(\.\.\.)?$`)
 var symbolRegexp = regexp.MustCompile(`^:\w(?:(?:-)[\d\w]|[\d\w_\$])*$`)
 
 func IsIdentifier(token string) bool {
@@ -27,7 +27,10 @@ func IsSymbol(token string) bool {
 	return symbolRegexp.MatchString(token)
 }
 
-func Categorize(input string) LispValue {
+func Categorize(input string, expansion bool) LispValue {
+	if expansion && IsIdentifier(input) {
+		return Atom{value: input, t: "expansion"}
+	}
 	if input == "true" {
 		return TRUE
 	} else if input == "false" {
@@ -37,7 +40,7 @@ func Categorize(input string) LispValue {
 	}
 	i, err := strconv.ParseInt(input, 10, 64)
 	if err == nil {
-		return Atom{value: i, t: "int"}
+		return Atom{value: int(i), t: "int"}
 	}
 	f, err2 := strconv.ParseFloat(input, 64)
 	if err2 == nil {
@@ -168,10 +171,15 @@ func Parse(tokens []string) []LispValue {
 				output = append(output, s)
 			}
 		} else {
+			expansion := false
+			if str.HasSuffix(token, "...") {
+				token = str.TrimSuffix(token, "...")
+				expansion = true
+			}
 			if len(stack) > 0 {
-				stack[len(stack)-1].children = append(stack[len(stack)-1].children, Categorize(token))
+				stack[len(stack)-1].children = append(stack[len(stack)-1].children, Categorize(token, expansion))
 			} else {
-				return []LispValue{Categorize(token)}
+				return []LispValue{Categorize(token, expansion)}
 			}
 		}
 	}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	str "strings"
@@ -215,6 +216,14 @@ func (l List) Eval(c *Context) LispValue {
 			}
 		}
 		for _, a := range l.children {
+			if a.Type() == "expansion" {
+				ls := a.Eval(c)
+				if ls.Type() != "list" {
+					return &Atom{t: "error", value: fmt.Sprintf("Cannot expand value of type '%s'", ls.Type())}
+				}
+				output.children = append(output.children, ls.(*List).children...)
+				continue
+			}
 			e := a.Eval(c)
 			if e.Type() == "error" {
 				return e
@@ -274,7 +283,7 @@ func (a Atom) String() string {
 }
 
 func (a Atom) Eval(c *Context) LispValue {
-	if a.t == "identifier" {
+	if a.t == "identifier" || a.t == "expansion" {
 		return c.Get(a.value.(string))
 	}
 	return a
@@ -334,8 +343,40 @@ func (f LispFunction) Call(args *List, c *Context) LispValue {
 	return f.value(args, c)
 }
 
-func NewFunction(fn func(*List, *Context) LispValue) LispFunction {
-	return LispFunction{value: fn}
+// "*"
+
+func NewFunction(name string, types string, fn func(*List, *Context) LispValue) LispFunction {
+	split := str.Split(types, ",")
+	wrapped := func(args *List, c *Context) LispValue {
+		for i, t := range split {
+			if i >= len(args.children) {
+				return &Atom{t: "error", value: fmt.Sprintf("Function '%s' expected %d args, only got %d.", name, len(split), len(args.children))}
+			}
+			a := args.children[i].Type()
+			switch t {
+			case "**":
+				break
+			case "*":
+				continue
+			case "+":
+				if i < 1 {
+					return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '+' as first argtype parameter.", name)}
+				}
+				for _, r := range args.children[i:] {
+					if !str.Contains(split[i-1], r.Type()) {
+						return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
+					}
+				}
+			default:
+				if !str.Contains(t, a) {
+					return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
+				}
+
+			}
+		}
+		return fn(args, c)
+	}
+	return LispFunction{value: wrapped}
 }
 
 type LispMacro struct {
@@ -365,7 +406,6 @@ func (f LispMacro) Type() string {
 }
 
 func (f LispMacro) Call(args *List, c *Context) LispValue {
-	// do some argc checking
 	return f.value(args, c)
 }
 
@@ -373,14 +413,26 @@ func NewMacro(fn func(*List, *Context) LispValue) LispMacro {
 	return LispMacro{value: fn}
 }
 
+func ParseArgs(argnames *List, argvals *List, c *Context) {
+	for i, a := range argnames.children {
+		switch a.Type() {
+		case "identifier":
+			c.Set(a.Value().(string), argvals.children[i])
+		case "expansion":
+			c.Set(a.Value().(string), &List{children: argvals.children[i:]})
+			return
+		default:
+			panic(fmt.Sprintf("Cannot use type '%s' in function argument list", a.Type()))
+		}
+	}
+}
+
 func Setup(c *Context) {
 	Special["lambda"] = func(form *List, c *Context) LispValue {
-		return NewFunction(func(args *List, outer *Context) LispValue {
+		return NewFunction("anonymous", "**", func(args *List, outer *Context) LispValue {
 			inner := NewContext(outer)
 			argnames := form.children[1].(List)
-			for i, a := range args.children {
-				inner.Set(argnames.children[i].Value().(string), a)
-			}
+			ParseArgs(&argnames, args, inner)
 			return form.children[2].Eval(inner)
 		})
 	}
@@ -469,6 +521,14 @@ func Setup(c *Context) {
 		}
 		return Atom{t: "error", value: fmt.Sprintf("Assert failed '%s'", form.children[1].String())}
 	}
+	Special["input"] = func(form *List, c *Context) LispValue {
+		reader := bufio.NewReader(os.Stdin)
+		in, err := reader.ReadString('\n')
+		if err != nil {
+			return Atom{t: "error", value: err}
+		}
+		return Atom{t: "string", value: in}
+	}
 	Special["macro"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() != "identifier" {
 			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
@@ -526,5 +586,4 @@ func Setup(c *Context) {
 		}
 		return Atom{t: "error", value: fmt.Sprintf("import expected argument 0 of type 'identifier' (namespace) or 'string', got type '%s'", form.children[1].Type())}
 	}
-	// TODO: return, break, continue
 }

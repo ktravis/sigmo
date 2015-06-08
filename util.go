@@ -4,7 +4,7 @@ func Add(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
 		sum := a.AsFloat() + b.AsFloat()
 		if a.t == "int" && b.t == "int" {
-			return Atom{t: "int", value: int64(sum)}
+			return Atom{t: "int", value: int(sum)}
 		}
 		return Atom{t: "float", value: sum}
 	}
@@ -15,7 +15,7 @@ func Negate(a Atom) Atom {
 	if a.t == "float" {
 		return Atom{t: "float", value: -a.value.(float64)}
 	} else if a.t == "int" {
-		return Atom{t: "int", value: -a.value.(int64)}
+		return Atom{t: "int", value: -a.value.(int)}
 	}
 	return Atom{t: "error", value: "Non-numeric value cannot be negated"}
 }
@@ -24,7 +24,7 @@ func Multiply(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
 		prod := a.AsFloat() * b.AsFloat()
 		if a.t == "int" && b.t == "int" {
-			return Atom{t: "int", value: int64(prod)}
+			return Atom{t: "int", value: int(prod)}
 		}
 		return Atom{t: "float", value: prod}
 	}
@@ -35,7 +35,7 @@ func Divide(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
 		div := a.AsFloat() / b.AsFloat()
 		if a.t == "int" && b.t == "int" {
-			return Atom{t: "int", value: int64(div)}
+			return Atom{t: "int", value: int(div)}
 		}
 		return Atom{t: "float", value: div}
 	}
@@ -56,7 +56,7 @@ func (n Atom) AsFloat() float64 {
 	if n.t == "float" {
 		return n.value.(float64)
 	} else if n.t == "int" {
-		return float64(n.value.(int64))
+		return float64(n.value.(int))
 	}
 	panic("Non-numeric type cannot be converted to float.")
 }
@@ -82,7 +82,7 @@ func Boolean(n LispValue) bool {
 	case "string":
 		return len(a.value.(string)) > 0
 	case "int":
-		return a.value.(int64) != 0
+		return a.value.(int) != 0
 	case "float":
 		return a.value.(float64) != 0.0
 	case "bool":
