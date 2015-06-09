@@ -1,5 +1,9 @@
 package main
 
+import (
+	"log"
+)
+
 func Add(a Atom, b Atom) Atom {
 	if (a.t == "int" || a.t == "float") && (b.t == "int" || b.t == "float") {
 		sum := a.AsFloat() + b.AsFloat()
@@ -58,7 +62,8 @@ func (n Atom) AsFloat() float64 {
 	} else if n.t == "int" {
 		return float64(n.value.(int))
 	}
-	panic("Non-numeric type cannot be converted to float.")
+	log.Fatal("Non-numeric type cannot be converted to float.")
+	return -1
 }
 
 func CompareNum(a Atom, b Atom) int {

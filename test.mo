@@ -16,8 +16,3 @@
 
 ;(print squares)
 
-(let (looping true line "")
-  (while looping
-    (print "> ")
-    (set! line (trim (input) "\n"))
-    (print "you said:" line)))

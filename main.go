@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/bobappleyard/readline"
 	"io/ioutil"
+	"log"
 	"regexp"
 	"strconv"
 	str "strings"
@@ -72,6 +73,18 @@ func Tokenize(input string) []string {
 			if c == '"' && len(tok) > 0 && (tok[len(tok)-1] != '\\') {
 				mode = NORMAL
 				add_token = true
+			} else if len(tok) > 0 && tok[len(tok)-1] == '\\' {
+				switch c {
+				case 'n':
+					tok = tok[:len(tok)-1]
+					c = '\n'
+				case 't':
+					tok = tok[:len(tok)-1]
+					c = '\t'
+				case 'r':
+					tok = tok[:len(tok)-1]
+					c = '\r'
+				}
 			}
 			add_char = true
 		} else {
@@ -245,7 +258,7 @@ func REPL(c *Context) *Context {
 func LoadFile(filename string, c *Context) LispValue {
 	dat, err := ioutil.ReadFile(filename)
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 	// need to figure out how to handle parse problems
 	nodes := Parse(Tokenize(string(dat)))
@@ -253,7 +266,7 @@ func LoadFile(filename string, c *Context) LispValue {
 	for _, n := range nodes {
 		last = n.Eval(c)
 		if last.Type() == "error" {
-			panic(last.Value().(string))
+			log.Fatal(last.Value().(string))
 		}
 	}
 	return last

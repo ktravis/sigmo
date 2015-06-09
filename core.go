@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"fmt"
+	"log"
 	"os"
 	str "strings"
 )
@@ -131,48 +132,6 @@ func NewContext(parent *Context) *Context {
 	}
 	return &c
 }
-
-// passthrough, can't "set"
-//type ReadContext struct {
-//scope     map[string]LispValue
-//parent    Context
-//namespace string
-//}
-
-//func (c *ReadContext) Get(identifier string) LispValue {
-//a, ok := c.scope[identifier]
-//if ok {
-//return a
-//}
-//return c.Parent().Get(identifier)
-//}
-
-//func (c *ReadContext) Set(identifier string, l LispValue) LispValue {
-//return c.Parent().Set(identifier, l)
-//}
-
-//func (c *ReadContext) SetExisting(identifier string, l LispValue) LispValue {
-//return c.Parent().SetExisting(identifier, l)
-//}
-
-//func (c *ReadContext) Parent() Context {
-//return c.parent
-//}
-
-//func (c *ReadContext) GetFromNamespace() string {
-//return c.namespace
-//}
-
-//func (c *ReadContext) SetNamespace(ns string) {
-//c.namespace = ns
-//}
-
-//func NewReadContext(m map[string]LispValue, parent Context) Context {
-//if parent == nil {
-//panic("Cannot create a ReadContext with no parent.")
-//}
-//return &ReadContext{scope: m, parent: parent}
-//}
 
 type LispValue interface {
 	String() string
@@ -422,7 +381,7 @@ func ParseArgs(argnames *List, argvals *List, c *Context) {
 			c.Set(a.Value().(string), &List{children: argvals.children[i:]})
 			return
 		default:
-			panic(fmt.Sprintf("Cannot use type '%s' in function argument list", a.Type()))
+			log.Fatal(fmt.Sprintf("Cannot use type '%s' in function argument list", a.Type()))
 		}
 	}
 }
@@ -451,6 +410,9 @@ func Setup(c *Context) {
 		var last LispValue = NIL
 		for _, n := range form.children[1:] {
 			last = n.Eval(c)
+			if last.Type() == "error" {
+				return last
+			}
 		}
 		return last
 	}
@@ -468,6 +430,9 @@ func Setup(c *Context) {
 		for Boolean(form.children[1].Eval(c)) {
 			for _, n := range form.children[2:] {
 				last = n.Eval(c)
+				if last.Type() == "error" {
+					return last
+				}
 			}
 		}
 		return last
@@ -489,8 +454,16 @@ func Setup(c *Context) {
 		}
 		ls := temp.(*List)
 		for _, n := range ls.children {
-			inner.Set(ident, n.Eval(inner))
-			out.children = append(out.children, form.children[2].Eval(inner))
+			x := n.Eval(inner)
+			if x.Type() == "error" {
+				return x
+			}
+			inner.Set(ident, x)
+			x = form.children[2].Eval(inner)
+			if x.Type() == "error" {
+				return x
+			}
+			out.children = append(out.children, x)
 		}
 		return out
 	}
@@ -514,6 +487,9 @@ func Setup(c *Context) {
 		var last LispValue = NIL
 		for _, n := range form.children[2:] {
 			last = n.Eval(inner)
+			if last.Type() == "error" {
+				return last
+			}
 		}
 		return last
 	}
@@ -548,6 +524,9 @@ func Setup(c *Context) {
 					p = NestedReplace(p, params.children[j].Value().(string), a)
 				}
 				last = p.Eval(outer)
+				if last.Type() == "error" {
+					return last
+				}
 			}
 			return last
 		})
@@ -575,6 +554,9 @@ func Setup(c *Context) {
 		var last LispValue = NIL
 		for _, x := range form.children[2:] {
 			last = x.Eval(ns)
+			if last.Type() == "error" {
+				return last
+			}
 		}
 		return last
 	}
