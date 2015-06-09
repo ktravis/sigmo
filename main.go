@@ -62,23 +62,24 @@ func Tokenize(input string) []string {
 	tok := []rune{}
 	mode := NORMAL
 	for _, c := range input {
+		add_token := false
+		add_char := false
 		if mode == COMMENT {
 			if c == '\n' {
 				mode = NORMAL
 			}
+		} else if mode == STRING {
+			if c == '"' && len(tok) > 0 && (tok[len(tok)-1] != '\\') {
+				mode = NORMAL
+				add_token = true
+			}
+			add_char = true
 		} else {
-			add_token := false
-			add_char := false
 			switch c {
 			case ';':
 				mode = COMMENT
 			case '"':
-				if mode == STRING && (tok[len(tok)-1] != '\\') {
-					mode = NORMAL
-					add_token = true
-				} else {
-					mode = STRING
-				}
+				mode = STRING
 				add_char = true
 			case ' ':
 				if mode == STRING {
@@ -139,13 +140,13 @@ func Tokenize(input string) []string {
 			default:
 				add_char = true
 			}
-			if add_char {
-				tok = append(tok, c)
-			}
-			if add_token && len(tok) > 0 {
-				tokens = append(tokens, string(tok))
-				tok = []rune{}
-			}
+		}
+		if add_char {
+			tok = append(tok, c)
+		}
+		if add_token && len(tok) > 0 {
+			tokens = append(tokens, string(tok))
+			tok = []rune{}
 		}
 	}
 	if len(tok) > 0 {

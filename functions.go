@@ -163,6 +163,14 @@ var core = map[string]LispFunction{
 		x.Quoted = false
 		return x.Eval(c)
 	}),
+	"eval": NewFunction("eval", "string", func(input *List, c *Context) LispValue {
+		var last LispValue = NIL
+		x := input.children[0].Value().(string)
+		for _, n := range Parse(Tokenize(x)) {
+			last = n.Eval(c)
+		}
+		return last
+	}),
 	"trim": NewFunction("trim", "string,string", func(input *List, c *Context) LispValue {
 		return Atom{t: "string", value: str.Trim(input.children[0].Value().(string), input.children[1].Value().(string))}
 	}),
@@ -171,6 +179,17 @@ var core = map[string]LispFunction{
 	}),
 	"split-n": NewFunction("split-n", "string,string,int", func(input *List, c *Context) LispValue {
 		return Atom{t: "string", value: str.SplitN(input.children[0].Value().(string), input.children[1].Value().(string), input.children[2].Value().(int))}
+	}),
+	"get": NewFunction("get", "int,list", func(input *List, c *Context) LispValue {
+		i := input.children[0].Value().(int)
+		l := input.children[1].(*List)
+		for i < 0 {
+			i += len(l.children)
+		}
+		if i < len(l.children) {
+			return l.children[i]
+		}
+		return Atom{t: "error", value: fmt.Sprintf("Index '%d' out of list bounds.", i)}
 	}),
 }
 
