@@ -18,5 +18,6 @@
 
 (let (looping true line "")
   (while looping
-    (set! line (input))
+    (print "> ")
+    (set! line (trim (input) "\n"))
     (print "you said:" line)))

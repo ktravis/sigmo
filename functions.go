@@ -32,7 +32,11 @@ var core = map[string]LispFunction{
 	"print": NewFunction("print", "**", func(input *List, c *Context) LispValue {
 		output := []string{}
 		for _, n := range input.children {
-			output = append(output, str.Trim(n.String(), "\""))
+			if n.Type() == "string" {
+				output = append(output, n.Value().(string))
+			} else {
+				output = append(output, n.String())
+			}
 		}
 		fmt.Printf(str.Join(output, " "))
 		return NIL
@@ -43,7 +47,11 @@ var core = map[string]LispFunction{
 		} else {
 			output := []string{}
 			for _, n := range input.children {
-				output = append(output, str.Trim(n.String(), "\""))
+				if n.Type() == "string" {
+					output = append(output, n.Value().(string))
+				} else {
+					output = append(output, n.String())
+				}
 			}
 			fmt.Println(str.Join(output, " "))
 		}

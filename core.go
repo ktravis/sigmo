@@ -466,7 +466,9 @@ func Setup(c *Context) {
 	Special["while"] = func(form *List, c *Context) LispValue {
 		var last LispValue = NIL
 		for Boolean(form.children[1].Eval(c)) {
-			last = form.children[2].Eval(c)
+			for _, n := range form.children[2:] {
+				last = n.Eval(c)
+			}
 		}
 		return last
 	}
@@ -524,7 +526,6 @@ func Setup(c *Context) {
 	Special["input"] = func(form *List, c *Context) LispValue {
 		reader := bufio.NewReader(os.Stdin)
 		in, err := reader.ReadString('\n')
-		fmt.Println("in was", in)
 		if err != nil {
 			return Atom{t: "error", value: err}
 		}
