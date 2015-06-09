@@ -524,6 +524,7 @@ func Setup(c *Context) {
 	Special["input"] = func(form *List, c *Context) LispValue {
 		reader := bufio.NewReader(os.Stdin)
 		in, err := reader.ReadString('\n')
+		fmt.Println("in was", in)
 		if err != nil {
 			return Atom{t: "error", value: err}
 		}
