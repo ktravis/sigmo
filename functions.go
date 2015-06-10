@@ -193,12 +193,23 @@ var core = map[string]LispFunction{
 	}),
 	"get": NewFunction("get", "string|symbol,hash", func(input *List, c *Context) LispValue {
 		s := input.children[0].Value().(string)
-		l := input.children[1].(*Hash)
+		h := input.children[1].(*Hash)
 		if input.children[0].Type() == "string" {
-			return l.vals[s]
+			return h.vals[s]
 		} else {
-			return l.sym_vals[s]
+			return h.sym_vals[s]
 		}
+	}),
+	"hset!": NewFunction("hset!", "string|symbol,*,hash", func(input *List, c *Context) LispValue {
+		s := input.children[0].Value().(string)
+		v := input.children[1]
+		h := input.children[2].(*Hash)
+		if input.children[0].Type() == "string" {
+			h.vals[s] = v
+		} else {
+			h.sym_vals[s] = v
+		}
+		return h
 	}),
 }
 
