@@ -104,7 +104,7 @@ func NestedReplace(n LispValue, identifier string, v LispValue) LispValue {
 		return v
 	}
 	if n.Type() == "list" {
-		l := n.(List)
+		l := n.(*List)
 		for i, c := range l.children {
 			l.children[i] = NestedReplace(c, identifier, v)
 		}

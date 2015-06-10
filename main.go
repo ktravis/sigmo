@@ -95,23 +95,11 @@ func Tokenize(input string) []string {
 				mode = STRING
 				add_char = true
 			case ' ':
-				if mode == STRING {
-					add_char = true
-				} else {
-					add_token = true
-				}
+				add_token = true
 			case '\n':
-				if mode == STRING {
-					add_char = true
-				} else {
-					add_token = true
-				}
+				add_token = true
 			case '\t':
-				if mode == STRING {
-					add_char = true
-				} else {
-					add_token = true
-				}
+				add_token = true
 			case '(':
 				if len(tok) > 0 && tok[len(tok)-1] != '\'' {
 					tokens = append(tokens, string(tok))
@@ -127,29 +115,23 @@ func Tokenize(input string) []string {
 				add_char = true
 				add_token = true
 			case '[':
-				if mode != STRING {
-					continue
-				} else {
-					add_char = true
-				}
+				continue
 			case ']':
-				if mode != STRING {
-					continue
-				} else {
-					add_char = true
-				}
-			case '}':
-				if mode != STRING {
-					continue
-				} else {
-					add_char = true
-				}
+				continue
 			case '{':
-				if mode != STRING {
-					continue
-				} else {
-					add_char = true
+				if len(tok) > 0 {
+					tokens = append(tokens, string(tok))
+					tok = []rune{}
 				}
+				add_char = true
+				add_token = true
+			case '}':
+				if len(tok) > 0 {
+					tokens = append(tokens, string(tok))
+					tok = []rune{}
+				}
+				add_char = true
+				add_token = true
 			default:
 				add_char = true
 			}
@@ -170,17 +152,34 @@ func Tokenize(input string) []string {
 
 func Parse(tokens []string) []LispValue {
 	var output []LispValue
-	var stack []List
+	var stack []LispContainer
 	for _, token := range tokens {
 		if token == "'(" {
-			stack = append(stack, List{Quoted: true})
+			stack = append(stack, &List{Quoted: true})
 		} else if token == "(" {
-			stack = append(stack, List{})
+			stack = append(stack, &List{})
 		} else if token == ")" {
 			s := stack[len(stack)-1]
 			stack = stack[:len(stack)-1]
-			if len(stack) > 0 {
-				stack[len(stack)-1].children = append(stack[len(stack)-1].children, s)
+			n := len(stack)
+			if n > 0 {
+				stack[n-1].Append(s)
+			} else {
+				output = append(output, s)
+			}
+		} else if token == "{" {
+			stack = append(stack, &Hash{pairs: []LispValue{},
+				sym_vals: make(map[string]LispValue),
+				vals:     make(map[string]LispValue)})
+		} else if token == "}" {
+			if stack[len(stack)-1].Type() != "hash" {
+				log.Fatal("Unexpected token '}' (no matching open bracket).")
+			}
+			s := stack[len(stack)-1].(*Hash)
+			stack = stack[:len(stack)-1]
+			n := len(stack)
+			if n > 0 {
+				stack[n-1].Append(s)
 			} else {
 				output = append(output, s)
 			}
@@ -190,10 +189,12 @@ func Parse(tokens []string) []LispValue {
 				token = str.TrimSuffix(token, "...")
 				expansion = true
 			}
-			if len(stack) > 0 {
-				stack[len(stack)-1].children = append(stack[len(stack)-1].children, Categorize(token, expansion))
+			s := Categorize(token, expansion)
+			n := len(stack)
+			if n > 0 {
+				stack[n-1].Append(s)
 			} else {
-				return []LispValue{Categorize(token, expansion)}
+				return []LispValue{s}
 			}
 		}
 	}

@@ -141,12 +141,18 @@ type LispValue interface {
 	Copy() LispValue
 }
 
+type LispContainer interface {
+	LispValue
+	Append(LispValue)
+	//Children() []LispValue
+}
+
 type List struct {
 	children []LispValue
 	Quoted   bool
 }
 
-func (l List) String() string {
+func (l *List) String() string {
 	elms := []string{}
 	for _, c := range l.children {
 		elms = append(elms, c.String())
@@ -157,7 +163,7 @@ func (l List) String() string {
 	return fmt.Sprintf("(%s)", str.Join(elms, " "))
 }
 
-func (l List) Eval(c *Context) LispValue {
+func (l *List) Eval(c *Context) LispValue {
 	if l.Quoted {
 		return l
 	}
@@ -167,11 +173,11 @@ func (l List) Eval(c *Context) LispValue {
 		if first.Type() == "identifier" {
 			f, special := Special[first.Value().(string)]
 			if special {
-				return f(&l, c)
+				return f(l, c)
 			}
 			m := first.Eval(c)
 			if m.Type() == "macro" {
-				return m.(LispMacro).Call(&l, c)
+				return m.(LispMacro).Call(l, c)
 			}
 		}
 		for _, a := range l.children {
@@ -198,24 +204,109 @@ func (l List) Eval(c *Context) LispValue {
 	return &output
 }
 
-func (l List) Value() interface{} {
+func (l *List) Value() interface{} {
 	return l.children
 }
 
-func (l List) Copy() LispValue {
+func (l *List) Copy() LispValue {
 	n := List{}
 	for _, el := range l.children {
 		n.children = append(n.children, el.Copy())
 	}
-	return n
+	return &n
 }
 
-func (l List) Type() string {
+func (l *List) Type() string {
 	return "list"
 }
 
-func (l List) Length() Atom {
+func (l *List) Length() Atom {
 	return Atom{t: "int", value: len(l.children)}
+}
+
+func (l *List) Append(v LispValue) {
+	l.children = append(l.children, v)
+}
+
+type Hash struct {
+	pairs    []LispValue
+	vals     map[string]LispValue
+	sym_vals map[string]LispValue
+}
+
+func MakeHash(pairs []LispValue, c *Context) LispValue {
+	h := Hash{vals: make(map[string]LispValue),
+		sym_vals: make(map[string]LispValue)}
+	var last LispValue = NIL
+	for i, v := range pairs {
+		if i%2 == 0 {
+			last = v.Eval(c)
+			if !(last.Type() == "string" || last.Type() == "symbol") {
+				return Atom{t: "error", value: fmt.Sprintf("Invalid key type '%s' for hash.", last.Type())}
+			}
+		} else {
+			if last.Type() == "string" {
+				h.vals[last.Value().(string)] = v.Eval(c)
+			} else if last.Type() == "symbol" {
+				h.sym_vals[last.Value().(string)] = v.Eval(c)
+			}
+			last = NIL
+		}
+	}
+	if last != NIL {
+		if last.Type() == "string" {
+			h.vals[last.Value().(string)] = NIL
+		} else if last.Type() == "symbol" {
+			h.sym_vals[last.Value().(string)] = NIL
+		}
+	}
+	return &h
+}
+
+func (h *Hash) String() string {
+	elms := []string{}
+	for k, v := range h.vals {
+		elms = append(elms, k, v.String())
+	}
+	for k, v := range h.sym_vals {
+		elms = append(elms, k, v.String())
+	}
+	return fmt.Sprintf("{%s}", str.Join(elms, " "))
+}
+
+func (h *Hash) Eval(c *Context) LispValue {
+	if len(h.pairs) > 0 {
+		return MakeHash(h.pairs, c)
+	}
+	return h
+}
+
+func (h *Hash) Value() interface{} {
+	return h.vals
+}
+
+func (h *Hash) Copy() LispValue {
+	n := Hash{vals: make(map[string]LispValue),
+		sym_vals: make(map[string]LispValue)}
+	for k, v := range h.vals {
+		n.vals[k] = v.Copy()
+	}
+	for k, v := range h.sym_vals {
+		n.sym_vals[k] = v.Copy()
+	}
+	return &n
+}
+
+func (h *Hash) Type() string {
+	return "hash"
+}
+
+func (h *Hash) Length() Atom {
+	return Atom{t: "int", value: len(h.vals) + len(h.sym_vals)}
+}
+
+func (h *Hash) Append(l LispValue) {
+	h.pairs = append(h.pairs, l)
 }
 
 type Atom struct {
@@ -390,8 +481,8 @@ func Setup(c *Context) {
 	Special["lambda"] = func(form *List, c *Context) LispValue {
 		return NewFunction("anonymous", "**", func(args *List, outer *Context) LispValue {
 			inner := NewContext(outer)
-			argnames := form.children[1].(List)
-			ParseArgs(&argnames, args, inner)
+			argnames := form.children[1].(*List)
+			ParseArgs(argnames, args, inner)
 			return form.children[2].Eval(inner)
 		})
 	}
@@ -442,7 +533,7 @@ func Setup(c *Context) {
 		if form.children[1].Type() != "list" {
 			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
 		}
-		params := form.children[1].(List)
+		params := form.children[1].(*List)
 		if params.children[0].Type() != "identifier" {
 			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
 		}
@@ -465,13 +556,13 @@ func Setup(c *Context) {
 			}
 			out.children = append(out.children, x)
 		}
-		return out
+		return &out
 	}
 	Special["let"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() != "list" {
 			return Atom{t: "error", value: "First argument to 'let' must be a list of form '(identifier list)'"}
 		}
-		params := form.children[1].(List)
+		params := form.children[1].(*List)
 		inner := NewContext(c)
 		for i := 0; i < len(params.children); i += 2 {
 			if params.children[i].Type() != "identifier" {
@@ -515,7 +606,7 @@ func Setup(c *Context) {
 		if form.children[2].Type() != "list" {
 			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 1 of type 'list', got type '%s'", form.children[2].Type())}
 		}
-		params := form.children[2].(List)
+		params := form.children[2].(*List)
 		v := NewMacro(func(args *List, outer *Context) LispValue {
 			var last LispValue = NIL
 			for _, r := range form.children[3:] {

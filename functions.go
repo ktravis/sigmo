@@ -68,7 +68,7 @@ var core = map[string]LispFunction{
 		return input.children[0].(*List).children[0]
 	}),
 	"tail": NewFunction("tail", "list", func(input *List, c *Context) LispValue {
-		return List{children: input.children[0].(*List).children[1:]}
+		return &List{children: input.children[0].(*List).children[1:]}
 	}),
 	"cons": NewFunction("cons", "*,*", func(input *List, c *Context) LispValue {
 		var left, right *List
@@ -93,7 +93,7 @@ var core = map[string]LispFunction{
 				out = append(out, l.children[i])
 			}
 		}
-		return List{children: out}
+		return &List{children: out}
 	}),
 	"len": NewFunction("len", "list|string", func(input *List, c *Context) LispValue {
 		if input.children[0].Type() == "list" {
@@ -159,7 +159,7 @@ var core = map[string]LispFunction{
 		return Atom{t: "bool", value: CompareNum(input.children[0].(Atom), input.children[1].(Atom)) >= 0}
 	}),
 	"exec": NewFunction("exec", "list", func(input *List, c *Context) LispValue {
-		x := input.children[0].Copy().(List)
+		x := input.children[0].Copy().(*List)
 		x.Quoted = false
 		return x.Eval(c)
 	}),
@@ -180,7 +180,7 @@ var core = map[string]LispFunction{
 	"split-n": NewFunction("split-n", "string,string,int", func(input *List, c *Context) LispValue {
 		return Atom{t: "string", value: str.SplitN(input.children[0].Value().(string), input.children[1].Value().(string), input.children[2].Value().(int))}
 	}),
-	"get": NewFunction("get", "int,list", func(input *List, c *Context) LispValue {
+	"at": NewFunction("at", "int,list", func(input *List, c *Context) LispValue {
 		i := input.children[0].Value().(int)
 		l := input.children[1].(*List)
 		for i < 0 {
@@ -190,6 +190,15 @@ var core = map[string]LispFunction{
 			return l.children[i]
 		}
 		return Atom{t: "error", value: fmt.Sprintf("Index '%d' out of list bounds.", i)}
+	}),
+	"get": NewFunction("get", "string|symbol,hash", func(input *List, c *Context) LispValue {
+		s := input.children[0].Value().(string)
+		l := input.children[1].(*Hash)
+		if input.children[0].Type() == "string" {
+			return l.vals[s]
+		} else {
+			return l.sym_vals[s]
+		}
 	}),
 }
 
