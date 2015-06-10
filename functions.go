@@ -95,9 +95,11 @@ var core = map[string]LispFunction{
 		}
 		return &List{children: out}
 	}),
-	"len": NewFunction("len", "list|string", func(input *List, c *Context) LispValue {
+	"len": NewFunction("len", "list|string|hash", func(input *List, c *Context) LispValue {
 		if input.children[0].Type() == "list" {
 			return input.children[0].(*List).Length()
+		} else if input.children[0].Type() == "hash" {
+			return input.children[0].(*Hash).Length()
 		} else {
 			return input.children[0].(Atom).Length()
 		}
@@ -168,6 +170,9 @@ var core = map[string]LispFunction{
 		x := input.children[0].Value().(string)
 		for _, n := range Parse(Tokenize(x)) {
 			last = n.Eval(c)
+			if last.Type() == "error" {
+				return last
+			}
 		}
 		return last
 	}),
@@ -180,7 +185,7 @@ var core = map[string]LispFunction{
 	"split-n": NewFunction("split-n", "string,string,int", func(input *List, c *Context) LispValue {
 		return Atom{t: "string", value: str.SplitN(input.children[0].Value().(string), input.children[1].Value().(string), input.children[2].Value().(int))}
 	}),
-	"at": NewFunction("at", "int,list", func(input *List, c *Context) LispValue {
+	"get": NewFunction("get", "int,list", func(input *List, c *Context) LispValue {
 		i := input.children[0].Value().(int)
 		l := input.children[1].(*List)
 		for i < 0 {
@@ -191,7 +196,7 @@ var core = map[string]LispFunction{
 		}
 		return Atom{t: "error", value: fmt.Sprintf("Index '%d' out of list bounds.", i)}
 	}),
-	"get": NewFunction("get", "string|symbol,hash", func(input *List, c *Context) LispValue {
+	"hget": NewFunction("hget", "string|symbol,hash", func(input *List, c *Context) LispValue {
 		s := input.children[0].Value().(string)
 		h := input.children[1].(*Hash)
 		if input.children[0].Type() == "string" {

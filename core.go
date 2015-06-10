@@ -661,4 +661,26 @@ func Setup(c *Context) {
 		}
 		return Atom{t: "error", value: fmt.Sprintf("import expected argument 0 of type 'identifier' (namespace) or 'string', got type '%s'", form.children[1].Type())}
 	}
+	Special["guard"] = func(form *List, c *Context) LispValue {
+		res := form.children[1].Eval(c)
+		if res.Type() == "error" {
+			wrapped := Atom{t: "string", value: res.Value().(string)}
+			if len(form.children) > 2 {
+				handler := form.children[2].Eval(c)
+				if handler.Type() == "function" {
+					args := &List{children: []LispValue{wrapped}}
+					return handler.(LispFunction).Call(args, c)
+					fmt.Println("handler is", handler)
+				} else if handler.Type() == "macro" {
+					args := &List{children: []LispValue{NIL, wrapped}}
+					return handler.(LispMacro).Call(args, c)
+				} else {
+					return Atom{t: "error", value: fmt.Sprintf("guard expected argument 1 of type 'function', got type '%s'", handler.Type())}
+				}
+			}
+			return NIL
+		} else {
+			return res
+		}
+	}
 }

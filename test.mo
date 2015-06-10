@@ -13,6 +13,3 @@
   ;(print a b)) ; 10 12
 
 ;(print a) ; 10
-
-;(print squares)
-
