@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 )
 
@@ -99,16 +100,25 @@ func Boolean(n LispValue) bool {
 	}
 }
 
-func NestedReplace(n LispValue, identifier string, v LispValue) LispValue {
+func NestedReplace(n LispValue, identifier string, v LispValue) []LispValue {
 	if n.Type() == "identifier" && n.Value().(string) == identifier {
-		return v
+		return []LispValue{v}
+	}
+	if n.Type() == "expansion" && n.Value().(string) == identifier {
+		if v.Type() != "list" {
+			log.Fatal(fmt.Sprintf("Cannot expand value of type '%s'", v.Type()))
+		}
+		out := []LispValue{}
+		out = append(out, v.(*List).children...)
+		return out
 	}
 	if n.Type() == "list" {
-		l := n.(*List)
-		for i, c := range l.children {
-			l.children[i] = NestedReplace(c, identifier, v)
+		o := n.(*List)
+		l := &List{Quoted: o.Quoted}
+		for _, c := range o.children {
+			l.children = append(l.children, NestedReplace(c, identifier, v)...)
 		}
-		return l
+		return []LispValue{l}
 	}
-	return n
+	return []LispValue{n}
 }

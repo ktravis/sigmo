@@ -1,3 +1,5 @@
+(macro quote (ls)
+  '(ls...))
 (macro defn (name args body)
        (def name
             (lambda args body)))
@@ -35,3 +37,24 @@
           (if (fn a)
             (set! out (cons out a))))
         out))
+
+(defn int? (a)
+  (= (type a) #int))
+
+(defn float? (a)
+  (= (type a) #float))
+
+(defn bool? (a)
+  (= (type a) #bool))
+
+(defn type? (a)
+  (= (type a) #type))
+
+(defn string? (a)
+  (= (type a) #string))
+
+(defn list? (a)
+  (= (type a) #list))
+
+(defn hash? (a)
+  (= (type a) #hash))

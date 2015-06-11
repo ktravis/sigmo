@@ -28,9 +28,19 @@ func IsSymbol(token string) bool {
 	return symbolRegexp.MatchString(token)
 }
 
-func Categorize(input string, expansion bool) LispValue {
-	if expansion && IsIdentifier(input) {
-		return Atom{value: input, t: "expansion"}
+func Categorize(input string) LispValue {
+	if str.HasSuffix(input, "...") {
+		if IsIdentifier(input[:len(input)-3]) {
+			return Atom{value: input[:len(input)-3], t: "expansion"}
+		} else {
+			return Atom{t: "error", value: fmt.Sprintf("Invalid token '%s'", input)}
+		}
+	} else if str.HasPrefix(input, "#") {
+		if IsIdentifier(input[1:]) {
+			return Atom{value: input[1:], t: "type"}
+		} else {
+			return Atom{t: "error", value: fmt.Sprintf("Invalid token '%s'", input)}
+		}
 	}
 	if input == "true" {
 		return TRUE
@@ -184,12 +194,7 @@ func Parse(tokens []string) []LispValue {
 				output = append(output, s)
 			}
 		} else {
-			expansion := false
-			if str.HasSuffix(token, "...") {
-				token = str.TrimSuffix(token, "...")
-				expansion = true
-			}
-			s := Categorize(token, expansion)
+			s := Categorize(token)
 			n := len(stack)
 			if n > 0 {
 				stack[n-1].Append(s)

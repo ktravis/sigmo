@@ -216,6 +216,9 @@ var core = map[string]LispFunction{
 		}
 		return h
 	}),
+	"type": NewFunction("type", "*", func(input *List, c *Context) LispValue {
+		return Atom{t: "type", value: input.children[0].Type()}
+	}),
 }
 
 var aliases = map[string]string{

@@ -209,7 +209,7 @@ func (l *List) Value() interface{} {
 }
 
 func (l *List) Copy() LispValue {
-	n := List{}
+	n := List{Quoted: l.Quoted}
 	for _, el := range l.children {
 		n.children = append(n.children, el.Copy())
 	}
@@ -328,6 +328,8 @@ func (a Atom) String() string {
 		return fmt.Sprintf("%s", a.value)
 	case "string":
 		return fmt.Sprintf("\"%s\"", a.value)
+	case "type":
+		return fmt.Sprintf("#%s", a.value)
 	}
 	return a.t
 }
@@ -398,6 +400,7 @@ func (f LispFunction) Call(args *List, c *Context) LispValue {
 func NewFunction(name string, types string, fn func(*List, *Context) LispValue) LispFunction {
 	split := str.Split(types, ",")
 	wrapped := func(args *List, c *Context) LispValue {
+		expanded := false
 		for i, t := range split {
 			if i >= len(args.children) {
 				return &Atom{t: "error", value: fmt.Sprintf("Function '%s' expected %d args, only got %d.", name, len(split), len(args.children))}
@@ -405,6 +408,7 @@ func NewFunction(name string, types string, fn func(*List, *Context) LispValue) 
 			a := args.children[i].Type()
 			switch t {
 			case "**":
+				expanded = true
 				break
 			case "*":
 				continue
@@ -417,12 +421,17 @@ func NewFunction(name string, types string, fn func(*List, *Context) LispValue) 
 						return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
 					}
 				}
+				expanded = true
+				break
 			default:
 				if !str.Contains(t, a) {
 					return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
 				}
 
 			}
+		}
+		if !expanded && len(args.children) > len(split) {
+			return &Atom{t: "error", value: fmt.Sprintf("Function '%s' expected %d args, but got %d.", name, len(split), len(args.children))}
 		}
 		return fn(args, c)
 	}
@@ -459,8 +468,45 @@ func (f LispMacro) Call(args *List, c *Context) LispValue {
 	return f.value(args, c)
 }
 
-func NewMacro(fn func(*List, *Context) LispValue) LispMacro {
-	return LispMacro{value: fn}
+func NewMacro(name string, types string, fn func(*List, *Context) LispValue) LispMacro {
+	split := str.Split(types, ",")
+	wrapped := func(args *List, c *Context) LispValue {
+		expanded := false
+		for i, t := range split {
+			if i >= len(args.children) {
+				return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' expected %d args, only got %d.", name, len(split), len(args.children))}
+			}
+			a := args.children[i].Type()
+			switch t {
+			case "**":
+				expanded = true
+				break
+			case "*":
+				continue
+			case "+":
+				if i < 1 {
+					return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' cannot have '+' as first argtype parameter.", name)}
+				}
+				for _, r := range args.children[i:] {
+					if !str.Contains(split[i-1], r.Type()) {
+						return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
+					}
+				}
+				expanded = true
+				break
+			default:
+				if !str.Contains(t, a) {
+					return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
+				}
+
+			}
+		}
+		if !expanded && len(args.children) > len(split) {
+			return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' expected %d args, but got %d.", name, len(split), len(args.children))}
+		}
+		return fn(args, c)
+	}
+	return LispMacro{value: wrapped}
 }
 
 func ParseArgs(argnames *List, argvals *List, c *Context) {
@@ -606,17 +652,21 @@ func Setup(c *Context) {
 		if form.children[2].Type() != "list" {
 			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 1 of type 'list', got type '%s'", form.children[2].Type())}
 		}
-		params := form.children[2].(*List)
-		v := NewMacro(func(args *List, outer *Context) LispValue {
+		v := NewMacro(name, "**", func(args *List, outer *Context) LispValue {
+			inner := NewContext(outer)
+			argnames := form.children[2].(*List)
+			ParseArgs(argnames, args, inner)
 			var last LispValue = NIL
+
 			for _, r := range form.children[3:] {
 				p := r.Copy()
 				for j, a := range args.children[1:] {
-					p = NestedReplace(p, params.children[j].Value().(string), a)
-				}
-				last = p.Eval(outer)
-				if last.Type() == "error" {
-					return last
+					for _, b := range NestedReplace(p, argnames.children[j].Value().(string), a) {
+						last = b.Eval(inner)
+						if last.Type() == "error" {
+							return last
+						}
+					}
 				}
 			}
 			return last
@@ -670,7 +720,6 @@ func Setup(c *Context) {
 				if handler.Type() == "function" {
 					args := &List{children: []LispValue{wrapped}}
 					return handler.(LispFunction).Call(args, c)
-					fmt.Println("handler is", handler)
 				} else if handler.Type() == "macro" {
 					args := &List{children: []LispValue{NIL, wrapped}}
 					return handler.(LispMacro).Call(args, c)
