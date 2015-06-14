@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"fmt"
-	"log"
 	"os"
 	str "strings"
 )
@@ -403,7 +402,10 @@ func NewFunction(name string, types string, fn func(*List, *Context) LispValue) 
 		expanded := false
 		for i, t := range split {
 			if i >= len(args.children) {
-				return &Atom{t: "error", value: fmt.Sprintf("Function '%s' expected %d args, only got %d.", name, len(split), len(args.children))}
+				if t == "**" {
+					break
+				}
+				return Atom{t: "error", value: fmt.Sprintf("Function '%s' expected %d args, only got %d.", name, len(split), len(args.children))}
 			}
 			a := args.children[i].Type()
 			switch t {
@@ -414,18 +416,18 @@ func NewFunction(name string, types string, fn func(*List, *Context) LispValue) 
 				continue
 			case "+":
 				if i < 1 {
-					return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '+' as first argtype parameter.", name)}
+					return Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '+' as first argtype parameter.", name)}
 				}
 				for _, r := range args.children[i:] {
 					if !str.Contains(split[i-1], r.Type()) {
-						return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
+						return Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
 					}
 				}
 				expanded = true
 				break
 			default:
 				if !str.Contains(t, a) {
-					return &Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
+					return Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
 				}
 
 			}
@@ -509,37 +511,66 @@ func NewMacro(name string, types string, fn func(*List, *Context) LispValue) Lis
 	return LispMacro{value: wrapped}
 }
 
-func ParseArgs(argnames *List, argvals *List, c *Context) {
+func ParseArgs(argnames *List, argvals *List, c *Context) LispValue {
 	for i, a := range argnames.children {
+		if i >= len(argvals.children) && a.Type() != "expansion" {
+			return Atom{t: "error", value: "Not enough arguments to function"}
+		}
 		switch a.Type() {
 		case "identifier":
 			c.Set(a.Value().(string), argvals.children[i])
 		case "expansion":
 			c.Set(a.Value().(string), &List{children: argvals.children[i:]})
-			return
+			return nil
+		case "typed id":
+			x := a.Value().(string)
+			j := str.Index(x, "#")
+			t := x[j+1:]
+			x = x[:j]
+			if argvals.children[i].Type() != t {
+				if conv := c.Get(t); conv.Type() == "function" {
+					temp := &List{children: []LispValue{argvals.children[i]}}
+					c.Set(x, conv.(LispFunction).Call(temp, c))
+					continue
+				}
+				return Atom{t: "error", value: fmt.Sprintf("Expected argument '%s' of type '%s', got '%s'", x, t, argvals.children[i].Type())}
+			}
+			c.Set(x, argvals.children[i])
 		default:
-			log.Fatal(fmt.Sprintf("Cannot use type '%s' in function argument list", a.Type()))
+			return Atom{t: "error", value: fmt.Sprintf("Cannot use type '%s' in function argument list", a.Type())}
 		}
 	}
+	return nil
 }
 
 func Setup(c *Context) {
 	Special["lambda"] = func(form *List, c *Context) LispValue {
+		// TODO not enough args to func
+		copied := make(map[string]LispValue)
+		for k, v := range c.scope {
+			copied[k] = v
+		}
 		return NewFunction("anonymous", "**", func(args *List, outer *Context) LispValue {
 			inner := NewContext(outer)
+			inner.scope = copied
 			argnames := form.children[1].(*List)
-			ParseArgs(argnames, args, inner)
+			if err := ParseArgs(argnames, args, inner); err != nil {
+				return err
+			}
 			return form.children[2].Eval(inner)
 		})
 	}
 	Special["def"] = func(form *List, c *Context) LispValue {
 		if len(form.children) != 3 {
-			return &Atom{t: "error", value: "Wrong number of arguments to 'def'"}
+			return Atom{t: "error", value: "Wrong number of arguments to 'def'"}
 		}
 		if form.children[1].Type() != "identifier" {
-			return &Atom{t: "error", value: fmt.Sprintf("def expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
+			return Atom{t: "error", value: fmt.Sprintf("def expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
 		}
 		v := form.children[2].Eval(c)
+		if v.Type() == "error" {
+			return v
+		}
 		c.Set(form.children[1].Value().(string), v)
 		return v
 	}
@@ -653,19 +684,28 @@ func Setup(c *Context) {
 			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 1 of type 'list', got type '%s'", form.children[2].Type())}
 		}
 		v := NewMacro(name, "**", func(args *List, outer *Context) LispValue {
-			inner := NewContext(outer)
 			argnames := form.children[2].(*List)
-			ParseArgs(argnames, args, inner)
+			subs := make(map[string]LispValue)
+			for i, a := range argnames.children {
+				if i >= len(args.children)-1 {
+					return Atom{t: "error", value: fmt.Sprintf("Not enough arguments to macro '%s'. Expected %d, got %d.", name, len(argnames.children), len(args.children)-1)}
+				}
+				if a.Type() == "identifier" {
+					subs[a.Value().(string)] = args.children[i+1]
+				} else if a.Type() == "expansion" {
+					subs[a.Value().(string)] = &List{children: args.children[1+i:]}
+					break
+				}
+			}
+			// error needs to bubble here somewhere
 			var last LispValue = NIL
 
 			for _, r := range form.children[3:] {
 				p := r.Copy()
-				for j, a := range args.children[1:] {
-					for _, b := range NestedReplace(p, argnames.children[j].Value().(string), a) {
-						last = b.Eval(inner)
-						if last.Type() == "error" {
-							return last
-						}
+				for _, b := range NestedReplace(p, &subs) {
+					last = b.Eval(outer)
+					if last.Type() == "error" {
+						return last
 					}
 				}
 			}
@@ -685,7 +725,11 @@ func Setup(c *Context) {
 		if form.children[1].Type() != "identifier" {
 			return Atom{t: "error", value: fmt.Sprintf("set! expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
 		}
-		return c.SetExisting(form.children[1].Value().(string), form.children[2].Eval(c))
+		x := form.children[2].Eval(c)
+		if x.Type() == "error" {
+			return x
+		}
+		return c.SetExisting(form.children[1].Value().(string), x)
 	}
 	Special["namespace"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() != "identifier" {
@@ -732,4 +776,20 @@ func Setup(c *Context) {
 			return res
 		}
 	}
+	Special["cond"] = func(form *List, c *Context) LispValue {
+		for _, pair := range form.children[1:] {
+			if pair.Type() != "list" {
+				return Atom{t: "error", value: fmt.Sprintf("Statements in body of 'cond' must be of type 'list', not '%s'", pair.Type())}
+			}
+			l := pair.(*List)
+			if len(l.children) != 2 {
+				return Atom{t: "error", value: "Statements in body of 'cond' should have length of two (bool body)"}
+			}
+			if Boolean(l.children[0].Eval(c)) {
+				return l.children[1].Eval(c)
+			}
+		}
+		return NIL
+	}
+	// TODO: (cond (bool op) (bool op) ...)
 }

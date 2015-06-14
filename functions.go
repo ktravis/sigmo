@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math"
+	"strconv"
 	str "strings"
 )
 
@@ -179,15 +181,50 @@ var core = map[string]LispFunction{
 	"trim": NewFunction("trim", "string,string", func(input *List, c *Context) LispValue {
 		return Atom{t: "string", value: str.Trim(input.children[0].Value().(string), input.children[1].Value().(string))}
 	}),
+	"join": NewFunction("split", "list,string", func(input *List, c *Context) LispValue {
+		elms := []string{}
+		for _, c := range input.children[0].(*List).children {
+			if c.Type() == "string" {
+				elms = append(elms, c.Value().(string))
+			} else {
+				elms = append(elms, c.String())
+			}
+		}
+		return Atom{t: "string", value: str.Join(elms, input.children[1].Value().(string))}
+	}),
 	"split": NewFunction("split", "string,string", func(input *List, c *Context) LispValue {
-		return Atom{t: "string", value: str.Split(input.children[0].Value().(string), input.children[1].Value().(string))}
+		out := &List{}
+		for _, s := range str.Split(input.children[0].Value().(string), input.children[1].Value().(string)) {
+			out.children = append(out.children, Atom{t: "string", value: s})
+		}
+		return out
 	}),
 	"split-n": NewFunction("split-n", "string,string,int", func(input *List, c *Context) LispValue {
-		return Atom{t: "string", value: str.SplitN(input.children[0].Value().(string), input.children[1].Value().(string), input.children[2].Value().(int))}
+		out := &List{}
+		for _, s := range str.SplitN(input.children[0].Value().(string), input.children[1].Value().(string), input.children[2].Value().(int)) {
+			out.children = append(out.children, Atom{t: "string", value: s})
+		}
+		return out
 	}),
-	"get": NewFunction("get", "int,list", func(input *List, c *Context) LispValue {
-		i := input.children[0].Value().(int)
-		l := input.children[1].(*List)
+	"parse-int": NewFunction("parse-int", "string", func(input *List, c *Context) LispValue {
+		s := input.children[0].Value().(string)
+		i, err := strconv.ParseInt(s, 10, 64)
+		if err != nil {
+			return Atom{t: "error", value: fmt.Sprintf("Could not convert string '%s' to an integer.", s)}
+		}
+		return Atom{t: "int", value: int(i)}
+	}),
+	"parse-float": NewFunction("parse-float", "string", func(input *List, c *Context) LispValue {
+		s := input.children[0].Value().(string)
+		f, err := strconv.ParseFloat(s, 10)
+		if err != nil {
+			return Atom{t: "error", value: fmt.Sprintf("Could not convert string '%s' to a float.", s)}
+		}
+		return Atom{t: "float", value: f}
+	}),
+	"get": NewFunction("get", "list,int", func(input *List, c *Context) LispValue {
+		l := input.children[0].(*List)
+		i := input.children[1].Value().(int)
 		for i < 0 {
 			i += len(l.children)
 		}
@@ -196,28 +233,66 @@ var core = map[string]LispFunction{
 		}
 		return Atom{t: "error", value: fmt.Sprintf("Index '%d' out of list bounds.", i)}
 	}),
-	"hget": NewFunction("hget", "string|symbol,hash", func(input *List, c *Context) LispValue {
-		s := input.children[0].Value().(string)
-		h := input.children[1].(*Hash)
-		if input.children[0].Type() == "string" {
+	"hget": NewFunction("hget", "hash,string|symbol", func(input *List, c *Context) LispValue {
+		h := input.children[0].(*Hash)
+		s := input.children[1].Value().(string)
+		if input.children[1].Type() == "string" {
 			return h.vals[s]
 		} else {
 			return h.sym_vals[s]
 		}
 	}),
-	"hset!": NewFunction("hset!", "string|symbol,*,hash", func(input *List, c *Context) LispValue {
-		s := input.children[0].Value().(string)
-		v := input.children[1]
-		h := input.children[2].(*Hash)
-		if input.children[0].Type() == "string" {
+	"hset!": NewFunction("hset!", "hash,string|symbol,*", func(input *List, c *Context) LispValue {
+		h := input.children[0].(*Hash)
+		s := input.children[1].Value().(string)
+		v := input.children[2]
+		if input.children[1].Type() == "string" {
 			h.vals[s] = v
 		} else {
 			h.sym_vals[s] = v
 		}
 		return h
 	}),
+	"hcontains": NewFunction("hcontains", "hash,string|symbol", func(input *List, c *Context) LispValue {
+		h := input.children[0].(*Hash)
+		s := input.children[1].Value().(string)
+		if input.children[1].Type() == "string" {
+			_, ok := h.vals[s]
+			return Atom{t: "bool", value: ok}
+		} else {
+			_, ok := h.sym_vals[s]
+			return Atom{t: "bool", value: ok}
+		}
+	}),
 	"type": NewFunction("type", "*", func(input *List, c *Context) LispValue {
 		return Atom{t: "type", value: input.children[0].Type()}
+	}),
+	"int": NewFunction("int", "int|float", func(input *List, c *Context) LispValue {
+		if input.children[0].Type() == "int" {
+			return input.children[0]
+		}
+		return Atom{t: "int", value: int(input.children[0].Value().(float64))}
+	}),
+	"float": NewFunction("float", "int|float", func(input *List, c *Context) LispValue {
+		if input.children[0].Type() == "float" {
+			return input.children[0]
+		}
+		return Atom{t: "float", value: float64(input.children[0].Value().(int))}
+	}),
+	"string": NewFunction("string", "*", func(input *List, c *Context) LispValue {
+		if input.children[0].Type() == "string" {
+			return input.children[0]
+		}
+		return Atom{t: "string", value: input.children[0].String()}
+	}),
+	"bool": NewFunction("string", "*", func(input *List, c *Context) LispValue {
+		return Atom{t: "bool", value: Boolean(input.children[0])}
+	}),
+	"floor": NewFunction("floor", "float", func(input *List, c *Context) LispValue {
+		return Atom{t: "float", value: math.Floor(input.children[0].Value().(float64))}
+	}),
+	"ceil": NewFunction("ceil", "float", func(input *List, c *Context) LispValue {
+		return Atom{t: "float", value: math.Ceil(input.children[0].Value().(float64))}
 	}),
 }
 

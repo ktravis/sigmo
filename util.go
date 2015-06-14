@@ -83,6 +83,10 @@ func Boolean(n LispValue) bool {
 	if n.Type() == "list" {
 		return len(n.(*List).children) > 0
 	}
+	if n.Type() == "hash" {
+		h := n.(*Hash)
+		return len(h.vals)+len(h.sym_vals) > 0
+	}
 	a := n.(Atom)
 	switch a.t {
 	case "string":
@@ -100,23 +104,26 @@ func Boolean(n LispValue) bool {
 	}
 }
 
-func NestedReplace(n LispValue, identifier string, v LispValue) []LispValue {
-	if n.Type() == "identifier" && n.Value().(string) == identifier {
-		return []LispValue{v}
-	}
-	if n.Type() == "expansion" && n.Value().(string) == identifier {
-		if v.Type() != "list" {
-			log.Fatal(fmt.Sprintf("Cannot expand value of type '%s'", v.Type()))
+func NestedReplace(n LispValue, subs *map[string]LispValue) []LispValue {
+	switch n.Type() {
+	case "identifier":
+		if v, ok := (*subs)[n.Value().(string)]; ok {
+			return []LispValue{v}
 		}
-		out := []LispValue{}
-		out = append(out, v.(*List).children...)
-		return out
-	}
-	if n.Type() == "list" {
+	case "expansion":
+		if v, ok := (*subs)[n.Value().(string)]; ok {
+			if v.Type() != "list" {
+				log.Fatal(fmt.Sprintf("Cannot expand value of type '%s'", v.Type()))
+			}
+			out := []LispValue{}
+			out = append(out, v.(*List).children...)
+			return out
+		}
+	case "list":
 		o := n.(*List)
 		l := &List{Quoted: o.Quoted}
 		for _, c := range o.children {
-			l.children = append(l.children, NestedReplace(c, identifier, v)...)
+			l.children = append(l.children, NestedReplace(c, subs)...)
 		}
 		return []LispValue{l}
 	}

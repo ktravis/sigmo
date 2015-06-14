@@ -17,7 +17,7 @@ const (
 	STRING
 )
 
-var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>\*\/](?:(?:\/|-)[\d\w]|[\d\w_\$])*[\?!]?(\.\.\.)?$`)
+var identRegexp = regexp.MustCompile(`^[\w\$!\+\-=<>\*\/](?:(?:\/|-)[\d\w]|[\d\w_\$])*[\?!\*]?(\.\.\.)?$`)
 var symbolRegexp = regexp.MustCompile(`^:\w(?:(?:-)[\d\w]|[\d\w_\$])*$`)
 
 func IsIdentifier(token string) bool {
@@ -38,6 +38,14 @@ func Categorize(input string) LispValue {
 	} else if str.HasPrefix(input, "#") {
 		if IsIdentifier(input[1:]) {
 			return Atom{value: input[1:], t: "type"}
+		} else {
+			return Atom{t: "error", value: fmt.Sprintf("Invalid token '%s'", input)}
+		}
+	} else if i := str.Index(input, "#"); i > -1 {
+		a := input[:i]
+		t := input[i+1:]
+		if IsIdentifier(a) && IsIdentifier(t) {
+			return Atom{value: input, t: "typed id"}
 		} else {
 			return Atom{t: "error", value: fmt.Sprintf("Invalid token '%s'", input)}
 		}
