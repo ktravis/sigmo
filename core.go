@@ -518,9 +518,13 @@ func ParseArgs(argnames *List, argvals *List, c *Context) LispValue {
 		}
 		switch a.Type() {
 		case "identifier":
-			c.Set(a.Value().(string), argvals.children[i])
+			c.Set(a.Value().(string), argvals.children[i].Copy())
 		case "expansion":
-			c.Set(a.Value().(string), &List{children: argvals.children[i:]})
+			children := []LispValue{}
+			for _, x := range argvals.children[i:] {
+				children = append(children, x.Copy())
+			}
+			c.Set(a.Value().(string), &List{children: children})
 			return nil
 		case "typed id":
 			x := a.Value().(string)
@@ -548,11 +552,13 @@ func Setup(c *Context) {
 		// TODO not enough args to func
 		copied := make(map[string]LispValue)
 		for k, v := range c.scope {
-			copied[k] = v
+			copied[k] = v.Copy()
 		}
 		return NewFunction("anonymous", "**", func(args *List, outer *Context) LispValue {
 			inner := NewContext(outer)
-			inner.scope = copied
+			for k, v := range copied {
+				inner.scope[k] = v.Copy()
+			}
 			argnames := form.children[1].(*List)
 			if err := ParseArgs(argnames, args, inner); err != nil {
 				return err
@@ -748,7 +754,7 @@ func Setup(c *Context) {
 	// TODO: add an "as" ie (import core/math m) or (import core/math *)
 	Special["import"] = func(form *List, c *Context) LispValue {
 		if form.children[1].Type() == "identifier" {
-			return LoadFile(fmt.Sprintf("%s/%s.lsp", os.Getenv("LSP_ROOT"), form.children[1].Value().(string)), c)
+			return LoadFile(fmt.Sprintf("%s/%s.mo", os.Getenv("SIGMO_ROOT"), form.children[1].Value().(string)), c)
 		}
 		if form.children[1].Type() == "string" {
 			return LoadFile(form.children[1].Value().(string), c)

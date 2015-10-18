@@ -1,3 +1,4 @@
+# a simple sigmo repl, implemented in sigmo
 (let (looping true line "")
   (while looping
     (print "> ")

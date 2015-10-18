@@ -10,12 +10,6 @@
 (defn max (a b)
       (if (> a b) a b))
 
-(defn *max (ls)
-      (reduce max ls (head ls)))
-
-(defn *min (ls)
-      (reduce min ls (head ls)))
-
 (defn nil? (a) (= a nil))
 
 (defn empty? (a) (= (len a) 0))
