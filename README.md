@@ -1,16 +1,6 @@
 sigmo
 =====
 
-Golang LISP dialect
-
-```bash
-go build
-./lsp                   # cli
-./lsp test.lsp          # run a file
-./lsp -c '(print "hi")' # run a single command
-./lsp -i test.lsp       # run a file, drop into cli with context
-```
-
 An interpreted lisp, written in Go.
 
 All of the basic lisp features you would expected, and a few extra:
@@ -24,4 +14,30 @@ All of the basic lisp features you would expected, and a few extra:
 - value expansions `(mylist...)`
 - type hints for functions `(defn onlyints (a#int) (println 'a was an int'))`
 
-See examples for more!
+See [examples](./tree/master/examples/) for more!
+
+install
+#######
+
+On linux: (requires package `libreadline-dev`)
+
+```bash
+go get github.com/ktravis/sigmo
+```
+
+build
+#####
+
+```bash
+go build ./cmd/sigmo
+```
+
+run
+###
+
+```bash
+./sigmo                   # cli
+./sigmo test.mo           # run a file
+./sigmo -c '(print "hi")' # run a single command
+./sigmo -i test.mo        # run a file, drop into cli with context
+```

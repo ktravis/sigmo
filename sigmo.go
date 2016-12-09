@@ -1,7 +1,6 @@
-package main
+package sigmo
 
 import (
-	"flag"
 	"fmt"
 	"github.com/bobappleyard/readline"
 	"io/ioutil"
@@ -284,35 +283,4 @@ func LoadFile(filename string, c *Context) LispValue {
 		}
 	}
 	return last
-}
-
-func main() {
-	command := flag.String("c", "", "Execute a command")
-	interactive := flag.Bool("i", false, "Enter the repl, after processing other commands")
-	flag.Parse()
-	filename := flag.Arg(0)
-
-	c := NewContext(nil)
-	Setup(c)
-	Bootstrap(c)
-	if !(*command == "") {
-		nodes := Parse(Tokenize(*command))
-		for _, n := range nodes {
-			r := n.Eval(c)
-			if r != NIL {
-				fmt.Println(r)
-			}
-		}
-		if *interactive {
-			REPL(c)
-		}
-	} else if filename != "" {
-		LoadFile(filename, c)
-		if *interactive {
-			REPL(c)
-		}
-	} else {
-		REPL(c)
-	}
-
 }
