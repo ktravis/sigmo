@@ -47,7 +47,7 @@ func Divide(a Atom, b Atom) Atom {
 	return Atom{t: "error", value: "Non-numeric value being divided"}
 }
 
-func Compare(a LispValue, b LispValue) bool {
+func Compare(a Value, b Value) bool {
 	if a.Type() != b.Type() {
 		return false
 	}
@@ -79,7 +79,7 @@ func CompareNum(a Atom, b Atom) int {
 	}
 }
 
-func Boolean(n LispValue) bool {
+func Boolean(n Value) bool {
 	if n.Type() == "list" {
 		return len(n.(*List).children) > 0
 	}
@@ -104,18 +104,18 @@ func Boolean(n LispValue) bool {
 	}
 }
 
-func NestedReplace(n LispValue, subs *map[string]LispValue) []LispValue {
+func NestedReplace(n Value, subs *map[string]Value) []Value {
 	switch n.Type() {
 	case "identifier":
 		if v, ok := (*subs)[n.Value().(string)]; ok {
-			return []LispValue{v}
+			return []Value{v}
 		}
 	case "expansion":
 		if v, ok := (*subs)[n.Value().(string)]; ok {
 			if v.Type() != "list" {
 				log.Fatal(fmt.Sprintf("Cannot expand value of type '%s'", v.Type()))
 			}
-			out := []LispValue{}
+			out := []Value{}
 			out = append(out, v.(*List).children...)
 			return out
 		}
@@ -125,7 +125,7 @@ func NestedReplace(n LispValue, subs *map[string]LispValue) []LispValue {
 		for _, c := range o.children {
 			l.children = append(l.children, NestedReplace(c, subs)...)
 		}
-		return []LispValue{l}
+		return []Value{l}
 	}
-	return []LispValue{n}
+	return []Value{n}
 }

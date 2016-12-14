@@ -1,153 +1,32 @@
 package sigmo
 
 import (
-	"bufio"
 	"fmt"
-	"os"
-	str "strings"
+	"strings"
 )
 
-var Special = make(map[string]func(*List, *Context) LispValue)
+var (
+	TRUE  = Atom{t: "bool", value: true}
+	FALSE = Atom{t: "bool", value: false}
+	NIL   = Atom{t: "nil"}
+)
 
-var TRUE = Atom{t: "bool", value: true}
-var FALSE = Atom{t: "bool", value: false}
-var NIL = Atom{t: "nil"}
-
-type Context struct {
-	scope      map[string]LispValue
-	parent     *Context
-	ns         string
-	namespaces map[string]*Context
-}
-
-func (c *Context) Get(identifier string) LispValue {
-	if str.Contains(identifier, "/") {
-		paths := str.Split(identifier, "/")
-		if c.ns != str.Join(paths[:len(paths)-1], "/") {
-			return c.GetFromNamespace(paths[:len(paths)-1], paths[len(paths)-1])
-		}
-		identifier = paths[len(paths)-1]
-	}
-	a, ok := c.scope[identifier]
-	if ok {
-		return a
-	}
-	p := c.parent
-	if p != nil {
-		return p.Get(identifier)
-	}
-	v := LispValue(Atom{t: "error", value: fmt.Sprintf("Unknown identifier '%s'", identifier)})
-	return v
-}
-
-func (c *Context) Set(identifier string, l LispValue) LispValue {
-	if str.Contains(identifier, "/") {
-		paths := str.Split(identifier, "/")
-		if c.ns != str.Join(paths[:len(paths)-1], "/") {
-			return c.SetInNamespace(paths[:len(paths)-1], paths[len(paths)-1], l)
-		}
-		identifier = paths[len(paths)-1]
-	}
-	c.scope[identifier] = l
-	return l
-}
-
-func (c *Context) SetExisting(identifier string, l LispValue) LispValue {
-	_, ok := c.scope[identifier]
-	if ok {
-		c.scope[identifier] = l
-		return l
-	}
-	p := c.parent
-	if p != nil {
-		return p.SetExisting(identifier, l)
-	}
-	v := LispValue(Atom{t: "error", value: fmt.Sprintf("Unknown identifier '%s'", identifier)})
-	return v
-}
-
-func (c *Context) GetFromNamespace(paths []string, identifier string) LispValue {
-	if c.parent == nil {
-		context := c
-		var ok bool
-		for _, n := range paths {
-			if context, ok = context.namespaces[n]; !ok {
-				return LispValue(Atom{t: "error", value: fmt.Sprintf("Unknown namespace '%s'", str.Join(paths, "/"))})
-			}
-		}
-		return context.Get(identifier)
-	}
-	return c.parent.GetFromNamespace(paths, identifier)
-}
-
-func (c *Context) SetInNamespace(paths []string, identifier string, l LispValue) LispValue {
-	root := c
-	for root.parent != nil {
-		root = root.parent
-	}
-	for i, p := range paths {
-		x, ok := root.namespaces[p]
-		if !ok {
-			root.namespaces[p] = NewContext(root)
-			x = root.namespaces[p]
-			x.ns = str.Join(paths[:i+1], "/")
-		}
-		root = x
-	}
-	root.scope[identifier] = l
-	return l
-}
-
-func GetNamespace(start *Context, path string) *Context {
-	paths := str.Split(path, "/")
-	root := start
-	for root.parent != nil {
-		root = root.parent
-	}
-	curr := root
-	for i, p := range paths[:len(paths)-1] {
-		x, ok := curr.namespaces[p]
-		if !ok {
-			curr.namespaces[p] = NewContext(curr)
-			x = curr.namespaces[p]
-			x.ns = str.Join(paths[:i], "/")
-		}
-		curr = x
-	}
-	x, exists := curr.namespaces[paths[len(paths)-1]]
-	if !exists {
-		x = NewContext(curr)
-		curr.namespaces[paths[len(paths)-1]] = x
-		x.ns = str.Join(paths, "/")
-	}
-	return x
-}
-
-func NewContext(parent *Context) *Context {
-	c := Context{
-		scope:      make(map[string]LispValue),
-		parent:     parent,
-		namespaces: make(map[string]*Context),
-	}
-	return &c
-}
-
-type LispValue interface {
+type Value interface {
 	String() string
-	Eval(*Context) LispValue
+	Eval(Context) Value
 	Value() interface{}
 	Type() string
-	Copy() LispValue
+	Copy() Value
 }
 
-type LispContainer interface {
-	LispValue
-	Append(LispValue)
-	//Children() []LispValue
+type Container interface {
+	Value
+	Append(Value)
+	//Children() []Value
 }
 
 type List struct {
-	children []LispValue
+	children []Value
 	Quoted   bool
 }
 
@@ -157,12 +36,12 @@ func (l *List) String() string {
 		elms = append(elms, c.String())
 	}
 	if l.Quoted {
-		return fmt.Sprintf("'(%s)", str.Join(elms, " "))
+		return fmt.Sprintf("'(%s)", strings.Join(elms, " "))
 	}
-	return fmt.Sprintf("(%s)", str.Join(elms, " "))
+	return fmt.Sprintf("(%s)", strings.Join(elms, " "))
 }
 
-func (l *List) Eval(c *Context) LispValue {
+func (l *List) Eval(c Context) Value {
 	if l.Quoted {
 		return l
 	}
@@ -170,13 +49,13 @@ func (l *List) Eval(c *Context) LispValue {
 	if len(l.children) > 0 {
 		first := l.children[0]
 		if first.Type() == "identifier" {
-			f, special := Special[first.Value().(string)]
+			f, special := specialForms[first.Value().(string)]
 			if special {
 				return f(l, c)
 			}
 			m := first.Eval(c)
 			if m.Type() == "macro" {
-				return m.(LispMacro).Call(l, c)
+				return m.(Macro).Call(l, c)
 			}
 		}
 		for _, a := range l.children {
@@ -197,7 +76,7 @@ func (l *List) Eval(c *Context) LispValue {
 		n := output.children[0]
 		if n.Type() == "function" {
 			l := List{children: output.children[1:]}
-			return n.(LispFunction).Call(&l, c)
+			return n.(Function).Call(&l, c)
 		}
 	}
 	return &output
@@ -207,7 +86,7 @@ func (l *List) Value() interface{} {
 	return l.children
 }
 
-func (l *List) Copy() LispValue {
+func (l *List) Copy() Value {
 	n := List{Quoted: l.Quoted}
 	for _, el := range l.children {
 		n.children = append(n.children, el.Copy())
@@ -223,20 +102,20 @@ func (l *List) Length() Atom {
 	return Atom{t: "int", value: len(l.children)}
 }
 
-func (l *List) Append(v LispValue) {
+func (l *List) Append(v Value) {
 	l.children = append(l.children, v)
 }
 
 type Hash struct {
-	pairs    []LispValue
-	vals     map[string]LispValue
-	sym_vals map[string]LispValue
+	pairs    []Value
+	vals     map[string]Value
+	sym_vals map[string]Value
 }
 
-func MakeHash(pairs []LispValue, c *Context) LispValue {
-	h := Hash{vals: make(map[string]LispValue),
-		sym_vals: make(map[string]LispValue)}
-	var last LispValue = NIL
+func MakeHash(pairs []Value, c Context) Value {
+	h := Hash{vals: make(map[string]Value),
+		sym_vals: make(map[string]Value)}
+	var last Value = NIL
 	for i, v := range pairs {
 		if i%2 == 0 {
 			last = v.Eval(c)
@@ -270,10 +149,10 @@ func (h *Hash) String() string {
 	for k, v := range h.sym_vals {
 		elms = append(elms, k, v.String())
 	}
-	return fmt.Sprintf("{%s}", str.Join(elms, " "))
+	return fmt.Sprintf("{%s}", strings.Join(elms, " "))
 }
 
-func (h *Hash) Eval(c *Context) LispValue {
+func (h *Hash) Eval(c Context) Value {
 	if len(h.pairs) > 0 {
 		return MakeHash(h.pairs, c)
 	}
@@ -284,9 +163,9 @@ func (h *Hash) Value() interface{} {
 	return h.vals
 }
 
-func (h *Hash) Copy() LispValue {
-	n := Hash{vals: make(map[string]LispValue),
-		sym_vals: make(map[string]LispValue)}
+func (h *Hash) Copy() Value {
+	n := Hash{vals: make(map[string]Value),
+		sym_vals: make(map[string]Value)}
 	for k, v := range h.vals {
 		n.vals[k] = v.Copy()
 	}
@@ -304,7 +183,7 @@ func (h *Hash) Length() Atom {
 	return Atom{t: "int", value: len(h.vals) + len(h.sym_vals)}
 }
 
-func (h *Hash) Append(l LispValue) {
+func (h *Hash) Append(l Value) {
 	h.pairs = append(h.pairs, l)
 }
 
@@ -333,7 +212,7 @@ func (a Atom) String() string {
 	return a.t
 }
 
-func (a Atom) Eval(c *Context) LispValue {
+func (a Atom) Eval(c Context) Value {
 	if a.t == "identifier" || a.t == "expansion" {
 		return c.Get(a.value.(string))
 	}
@@ -344,7 +223,7 @@ func (a Atom) Value() interface{} {
 	return a.value
 }
 
-func (a Atom) Copy() LispValue {
+func (a Atom) Copy() Value {
 	return Atom{t: a.t, value: a.value}
 }
 
@@ -363,42 +242,40 @@ func (a Atom) Length() Atom {
 	}
 }
 
-type LispFunction struct {
-	argc     int
-	argtypes []string
-	value    func(*List, *Context) LispValue
-}
+type Function func(*List, Context) Value
 
-func (f LispFunction) String() string {
+func (f Function) String() string {
 	return "{fn}"
 }
 
-func (f LispFunction) Eval(c *Context) LispValue {
+func (f Function) Eval(c Context) Value {
 	return f
 }
 
-func (f LispFunction) Value() interface{} {
+func (f Function) Value() interface{} {
 	return NIL
 }
 
-func (f LispFunction) Copy() LispValue {
-	return LispFunction{argc: f.argc, argtypes: f.argtypes, value: f.value}
+func (f Function) Copy() Value {
+	return f
 }
 
-func (f LispFunction) Type() string {
+func (f Function) Type() string {
 	return "function"
 }
 
-func (f LispFunction) Call(args *List, c *Context) LispValue {
-	// do some argc checking
-	return f.value(args, c)
+func (f Function) Call(args *List, c Context) Value {
+	return f(args, c)
 }
 
 // "*"
 
-func NewFunction(name string, types string, fn func(*List, *Context) LispValue) LispFunction {
-	split := str.Split(types, ",")
-	wrapped := func(args *List, c *Context) LispValue {
+func NewFunction(name string, types string, fn func(*List, Context) Value) Function {
+	split := strings.Split(types, ",")
+	if len(split) == 1 && split[0] == "**" {
+		return Function(fn)
+	}
+	wrapped := func(args *List, c Context) Value {
 		expanded := false
 		for i, t := range split {
 			if i >= len(args.children) {
@@ -419,14 +296,14 @@ func NewFunction(name string, types string, fn func(*List, *Context) LispValue) 
 					return Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '+' as first argtype parameter.", name)}
 				}
 				for _, r := range args.children[i:] {
-					if !str.Contains(split[i-1], r.Type()) {
+					if !strings.Contains(split[i-1], r.Type()) {
 						return Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
 					}
 				}
 				expanded = true
 				break
 			default:
-				if !str.Contains(t, a) {
+				if !strings.Contains(t, a) {
 					return Atom{t: "error", value: fmt.Sprintf("Function '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
 				}
 
@@ -437,42 +314,41 @@ func NewFunction(name string, types string, fn func(*List, *Context) LispValue) 
 		}
 		return fn(args, c)
 	}
-	return LispFunction{value: wrapped}
+	return Function(wrapped)
 }
 
-type LispMacro struct {
-	argc     int
-	argtypes []string
-	value    func(*List, *Context) LispValue
-}
+type Macro func(*List, Context) Value
 
-func (f LispMacro) String() string {
+func (m Macro) String() string {
 	return "{macro}"
 }
 
-func (f LispMacro) Eval(c *Context) LispValue {
-	return f
+func (m Macro) Eval(c Context) Value {
+	return m
 }
 
-func (f LispMacro) Value() interface{} {
+func (m Macro) Value() interface{} {
 	return NIL
 }
 
-func (f LispMacro) Copy() LispValue {
-	return LispMacro{argc: f.argc, argtypes: f.argtypes, value: f.value}
+func (m Macro) Copy() Value {
+	return m
 }
 
-func (f LispMacro) Type() string {
+func (m Macro) Type() string {
 	return "macro"
 }
 
-func (f LispMacro) Call(args *List, c *Context) LispValue {
-	return f.value(args, c)
+func (m Macro) Call(args *List, c Context) Value {
+	return m(args, c)
 }
 
-func NewMacro(name string, types string, fn func(*List, *Context) LispValue) LispMacro {
-	split := str.Split(types, ",")
-	wrapped := func(args *List, c *Context) LispValue {
+func NewMacro(name string, types string, fn func(*List, Context) Value) Macro {
+	split := strings.Split(types, ",")
+	if len(split) == 1 && split[0] == "**" {
+		return Macro(fn)
+	}
+	wrapped := func(args *List, c Context) Value {
 		expanded := false
 		for i, t := range split {
 			if i >= len(args.children) {
@@ -490,14 +366,14 @@ func NewMacro(name string, types string, fn func(*List, *Context) LispValue) Lis
 					return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' cannot have '+' as first argtype parameter.", name)}
 				}
 				for _, r := range args.children[i:] {
-					if !str.Contains(split[i-1], r.Type()) {
+					if !strings.Contains(split[i-1], r.Type()) {
 						return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' cannot have '%s' as argtype, expected '%s'.", name, r.Type(), split[i-1])}
 					}
 				}
 				expanded = true
 				break
 			default:
-				if !str.Contains(t, a) {
+				if !strings.Contains(t, a) {
 					return &Atom{t: "error", value: fmt.Sprintf("Macro '%s' cannot have '%s' as argtype, expected '%s'.", name, a, t)}
 				}
 
@@ -508,10 +384,10 @@ func NewMacro(name string, types string, fn func(*List, *Context) LispValue) Lis
 		}
 		return fn(args, c)
 	}
-	return LispMacro{value: wrapped}
+	return Macro(wrapped)
 }
 
-func ParseArgs(argnames *List, argvals *List, c *Context) LispValue {
+func ParseArgs(argnames *List, argvals *List, c Context) Value {
 	for i, a := range argnames.children {
 		if i >= len(argvals.children) && a.Type() != "expansion" {
 			return Atom{t: "error", value: "Not enough arguments to function"}
@@ -520,7 +396,7 @@ func ParseArgs(argnames *List, argvals *List, c *Context) LispValue {
 		case "identifier":
 			c.Set(a.Value().(string), argvals.children[i].Copy())
 		case "expansion":
-			children := []LispValue{}
+			children := []Value{}
 			for _, x := range argvals.children[i:] {
 				children = append(children, x.Copy())
 			}
@@ -528,13 +404,13 @@ func ParseArgs(argnames *List, argvals *List, c *Context) LispValue {
 			return nil
 		case "typed id":
 			x := a.Value().(string)
-			j := str.Index(x, "#")
+			j := strings.Index(x, "#")
 			t := x[j+1:]
 			x = x[:j]
 			if argvals.children[i].Type() != t {
 				if conv := c.Get(t); conv.Type() == "function" {
-					temp := &List{children: []LispValue{argvals.children[i]}}
-					c.Set(x, conv.(LispFunction).Call(temp, c))
+					temp := &List{children: []Value{argvals.children[i]}}
+					c.Set(x, conv.(Function).Call(temp, c))
 					continue
 				}
 				return Atom{t: "error", value: fmt.Sprintf("Expected argument '%s' of type '%s', got '%s'", x, t, argvals.children[i].Type())}
@@ -545,257 +421,4 @@ func ParseArgs(argnames *List, argvals *List, c *Context) LispValue {
 		}
 	}
 	return nil
-}
-
-func Setup(c *Context) {
-	Special["lambda"] = func(form *List, c *Context) LispValue {
-		// TODO not enough args to func
-		copied := make(map[string]LispValue)
-		for k, v := range c.scope {
-			copied[k] = v.Copy()
-		}
-		return NewFunction("anonymous", "**", func(args *List, outer *Context) LispValue {
-			inner := NewContext(outer)
-			for k, v := range copied {
-				inner.scope[k] = v.Copy()
-			}
-			argnames := form.children[1].(*List)
-			if err := ParseArgs(argnames, args, inner); err != nil {
-				return err
-			}
-			return form.children[2].Eval(inner)
-		})
-	}
-	Special["def"] = func(form *List, c *Context) LispValue {
-		if len(form.children) != 3 {
-			return Atom{t: "error", value: "Wrong number of arguments to 'def'"}
-		}
-		if form.children[1].Type() != "identifier" {
-			return Atom{t: "error", value: fmt.Sprintf("def expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
-		}
-		v := form.children[2].Eval(c)
-		if v.Type() == "error" {
-			return v
-		}
-		c.Set(form.children[1].Value().(string), v)
-		return v
-	}
-	Special["do"] = func(form *List, c *Context) LispValue {
-		var last LispValue = NIL
-		for _, n := range form.children[1:] {
-			last = n.Eval(c)
-			if last.Type() == "error" {
-				return last
-			}
-		}
-		return last
-	}
-	Special["if"] = func(form *List, c *Context) LispValue {
-		if Boolean(form.children[1].Eval(c)) {
-			return form.children[2].Eval(c)
-		}
-		if len(form.children) > 3 {
-			return form.children[3].Eval(c)
-		}
-		return NIL // should this be false?
-	}
-	Special["while"] = func(form *List, c *Context) LispValue {
-		var last LispValue = NIL
-		for Boolean(form.children[1].Eval(c)) {
-			for _, n := range form.children[2:] {
-				last = n.Eval(c)
-				if last.Type() == "error" {
-					return last
-				}
-			}
-		}
-		return last
-	}
-	Special["for"] = func(form *List, c *Context) LispValue {
-		out := List{}
-		if form.children[1].Type() != "list" {
-			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
-		}
-		params := form.children[1].(*List)
-		if params.children[0].Type() != "identifier" {
-			return Atom{t: "error", value: "First argument to 'for' must be a list of form '(identifier list)'"}
-		}
-		ident := params.children[0].Value().(string)
-		inner := NewContext(c)
-		temp := params.children[1].Eval(inner)
-		if temp.Type() != "list" {
-			return Atom{t: "error", value: "Second argument of 'for' parameters must evaluate to a list"}
-		}
-		ls := temp.(*List)
-		for _, n := range ls.children {
-			x := n.Eval(inner)
-			if x.Type() == "error" {
-				return x
-			}
-			inner.Set(ident, x)
-			x = form.children[2].Eval(inner)
-			if x.Type() == "error" {
-				return x
-			}
-			out.children = append(out.children, x)
-		}
-		return &out
-	}
-	Special["let"] = func(form *List, c *Context) LispValue {
-		if form.children[1].Type() != "list" {
-			return Atom{t: "error", value: "First argument to 'let' must be a list of form '(identifier list)'"}
-		}
-		params := form.children[1].(*List)
-		inner := NewContext(c)
-		for i := 0; i < len(params.children); i += 2 {
-			if params.children[i].Type() != "identifier" {
-				return Atom{t: "error", value: "Even parameters to 'let' must be identifiers"}
-			}
-			ident := params.children[i].Value().(string)
-			var val LispValue = NIL
-			if len(params.children) > i+1 {
-				val = params.children[i+1].Eval(inner)
-			}
-			inner.Set(ident, val)
-		}
-		var last LispValue = NIL
-		for _, n := range form.children[2:] {
-			last = n.Eval(inner)
-			if last.Type() == "error" {
-				return last
-			}
-		}
-		return last
-	}
-	Special["assert"] = func(form *List, c *Context) LispValue {
-		if Boolean(form.children[1].Eval(c)) {
-			return TRUE
-		}
-		return Atom{t: "error", value: fmt.Sprintf("Assert failed '%s'", form.children[1].String())}
-	}
-	Special["input"] = func(form *List, c *Context) LispValue {
-		reader := bufio.NewReader(os.Stdin)
-		in, err := reader.ReadString('\n')
-		if err != nil {
-			return Atom{t: "error", value: err}
-		}
-		return Atom{t: "string", value: in}
-	}
-	Special["macro"] = func(form *List, c *Context) LispValue {
-		if form.children[1].Type() != "identifier" {
-			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
-		}
-		name := form.children[1].Value().(string)
-		if form.children[2].Type() != "list" {
-			return Atom{t: "error", value: fmt.Sprintf("macro expected argument 1 of type 'list', got type '%s'", form.children[2].Type())}
-		}
-		v := NewMacro(name, "**", func(args *List, outer *Context) LispValue {
-			argnames := form.children[2].(*List)
-			subs := make(map[string]LispValue)
-			for i, a := range argnames.children {
-				if i >= len(args.children)-1 {
-					return Atom{t: "error", value: fmt.Sprintf("Not enough arguments to macro '%s'. Expected %d, got %d.", name, len(argnames.children), len(args.children)-1)}
-				}
-				if a.Type() == "identifier" {
-					subs[a.Value().(string)] = args.children[i+1]
-				} else if a.Type() == "expansion" {
-					subs[a.Value().(string)] = &List{children: args.children[1+i:]}
-					break
-				}
-			}
-			// error needs to bubble here somewhere
-			var last LispValue = NIL
-
-			for _, r := range form.children[3:] {
-				p := r.Copy()
-				for _, b := range NestedReplace(p, &subs) {
-					last = b.Eval(outer)
-					if last.Type() == "error" {
-						return last
-					}
-				}
-			}
-			return last
-		})
-		c.Set(name, v)
-		return v
-	}
-	Special["debug"] = func(form *List, c *Context) LispValue {
-		fmt.Println("ns", c.ns)
-		fmt.Println("scope", c.scope)
-		fmt.Println("namespaces", c.namespaces)
-		fmt.Println("parent", c.parent)
-		return NIL
-	}
-	Special["set!"] = func(form *List, c *Context) LispValue {
-		if form.children[1].Type() != "identifier" {
-			return Atom{t: "error", value: fmt.Sprintf("set! expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
-		}
-		x := form.children[2].Eval(c)
-		if x.Type() == "error" {
-			return x
-		}
-		return c.SetExisting(form.children[1].Value().(string), x)
-	}
-	Special["namespace"] = func(form *List, c *Context) LispValue {
-		if form.children[1].Type() != "identifier" {
-			return Atom{t: "error", value: fmt.Sprintf("namespace! expected argument 0 of type 'identifier', got type '%s'", form.children[1].Type())}
-		}
-		ns := GetNamespace(c, form.children[1].Value().(string))
-		var last LispValue = NIL
-		for _, x := range form.children[2:] {
-			last = x.Eval(ns)
-			if last.Type() == "error" {
-				return last
-			}
-		}
-		return last
-	}
-	// TODO: add an "as" ie (import core/math m) or (import core/math *)
-	Special["import"] = func(form *List, c *Context) LispValue {
-		if form.children[1].Type() == "identifier" {
-			return LoadFile(fmt.Sprintf("%s/%s.mo", os.Getenv("SIGMO_ROOT"), form.children[1].Value().(string)), c)
-		}
-		if form.children[1].Type() == "string" {
-			return LoadFile(form.children[1].Value().(string), c)
-		}
-		return Atom{t: "error", value: fmt.Sprintf("import expected argument 0 of type 'identifier' (namespace) or 'string', got type '%s'", form.children[1].Type())}
-	}
-	Special["guard"] = func(form *List, c *Context) LispValue {
-		res := form.children[1].Eval(c)
-		if res.Type() == "error" {
-			wrapped := Atom{t: "string", value: res.Value().(string)}
-			if len(form.children) > 2 {
-				handler := form.children[2].Eval(c)
-				if handler.Type() == "function" {
-					args := &List{children: []LispValue{wrapped}}
-					return handler.(LispFunction).Call(args, c)
-				} else if handler.Type() == "macro" {
-					args := &List{children: []LispValue{NIL, wrapped}}
-					return handler.(LispMacro).Call(args, c)
-				} else {
-					return Atom{t: "error", value: fmt.Sprintf("guard expected argument 1 of type 'function', got type '%s'", handler.Type())}
-				}
-			}
-			return NIL
-		} else {
-			return res
-		}
-	}
-	Special["cond"] = func(form *List, c *Context) LispValue {
-		for _, pair := range form.children[1:] {
-			if pair.Type() != "list" {
-				return Atom{t: "error", value: fmt.Sprintf("Statements in body of 'cond' must be of type 'list', not '%s'", pair.Type())}
-			}
-			l := pair.(*List)
-			if len(l.children) != 2 {
-				return Atom{t: "error", value: "Statements in body of 'cond' should have length of two (bool body)"}
-			}
-			if Boolean(l.children[0].Eval(c)) {
-				return l.children[1].Eval(c)
-			}
-		}
-		return NIL
-	}
-	// TODO: (cond (bool op) (bool op) ...)
 }

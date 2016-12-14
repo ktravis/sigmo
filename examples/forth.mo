@@ -1,3 +1,5 @@
+(import "prelude.mo")
+
 (macro pop! (ls)
  (let (temp (head ls))
   (set! ls (tail ls))
