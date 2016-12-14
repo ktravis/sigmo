@@ -14,7 +14,7 @@ All of the basic lisp features you would expected, and a few extra:
 - value expansions `(mylist...)`
 - type hints for functions `(defn onlyints (a#int) (println 'a was an int'))`
 
-See [examples](./tree/master/examples/) for more!
+See [examples](./examples/) for more!
 
 install
 #######
