@@ -9,7 +9,7 @@ All of the basic lisp features you would expected, and a few extra:
 - importing files `(import core/math)`
 - `for` loop construct 
 - errors and "guards" (think try/except) `(guard (error "help"))`
-- real macros
+- "real" macros
 - hashmap values `{ "a" 1 }`
 - value expansions `(mylist...)`
 - type hints for functions `(defn onlyints (a#int) (println 'a was an int'))`
